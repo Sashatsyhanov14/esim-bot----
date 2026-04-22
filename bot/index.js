@@ -1,0 +1,963 @@
+const { Telegraf, session, Markup } = require('telegraf');
+const axios = require('axios');
+const dotenv = require('dotenv');
+const path = require('path');
+const { supabase, getUser, createUser, updateUser, getTariffs, saveMessage, getHistory, createOrder, getFaq, clearHistory } = require('./src/supabase');
+const { getChatResponse, getLocalizedText } = require('./src/openai');
+
+dotenv.config({ path: path.resolve(__dirname, './.env') });
+
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const MANAGER_ID = parseInt(process.env.MANAGER_ID);
+
+const userLangCache = {};
+
+let botInfo = null;
+bot.telegram.getMe().then(info => {
+    botInfo = info;
+    console.log(`[INFO] Bot started as @${info.username}`);
+});
+
+bot.use(session());
+
+// Hybrid state tracking: uses Database (Map as fallback/cache for multi-process or recovery)
+const managerStates = new Map();
+const clientStates = new Map();
+
+// --- HELPER: Escape Markdown ---
+const esc = (text) => (text || '').toString().replace(/[_*`[\]()]/g, '\\$&');
+
+// --- HELPER: Localization for Tariffs (Simplified: Country Only) ---
+const locTariff = (tariff) => {
+    return { country: tariff.country_ru || tariff.country, data_gb: tariff.data_gb, validity: tariff.validity_period };
+};
+
+// --- HELPER: Late Follow-up (2 min) ---
+async function scheduleFollowup(userId) {
+    const delayText = `Благодарим Вас за проявленный интерес и уделенное время! 🙏
+Желаем Вам приятного путешествия! ✈️
+
+Ваша eSIM уже активна — интернет заработает сразу по прилёту. Если Вы уже за границей, связь доступна прямо сейчас 🌍
+Не забудьте включить роуминг данных для профиля eSIM.
+
+Рекомендуем установить приложение eMedeo — цифровую платформу с прозрачными ценами, отзывами и поддержкой 24/7 🤖
+ИИ от eMedeo поможет Вам:
+• Подобрать трансфер 🚗
+• Арендовать авто или жильё 🏡
+• Забронировать экскурсии 🗺️
+• Совершать покупки 🛍️
+• Получить юридические и консультационные услуги ⚖️
+— Мир без посредников —
+
+Мы всегда рядом, если что-то пойдёт не так — чат поддержки 24/7 💬
+
+Наше приложение:
+Android: https://play.google.com/store/apps/details?id=com.emedeo.codeware
+IOS: https://apps.apple.com/app/emedeo/id6738978452`;
+    
+    setTimeout(async () => {
+        try {
+            const photoUrl = 'https://drive.google.com/uc?export=download&id=1zxDZ_QkKYu6VKFlS7nNlRktlLKLxSx47';
+            const response = await axios({
+                url: photoUrl,
+                method: 'GET',
+                responseType: 'arraybuffer',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0'
+                }
+            });
+            const buffer = Buffer.from(response.data);
+            await bot.telegram.sendPhoto(userId, { source: buffer }, { caption: delayText });
+        } catch (err) {
+            try { await bot.telegram.sendMessage(userId, delayText, { disable_web_page_preview: true }); } catch (e) { }
+        }
+    }, 2 * 60 * 1000);
+}
+
+// --- MANAGER FLOW ---
+bot.on(['photo', 'document', 'text'], async (ctx, next) => {
+    const senderId = ctx.from.id;
+
+    // Skip if it's the start command
+    if (ctx.message.text && ctx.message.text.startsWith('/start')) return next();
+
+    const { data: sender } = await getUser(senderId);
+    const isManager = sender && (sender.role === 'manager' || sender.role === 'founder' || sender.role === 'admin' || senderId === MANAGER_ID);
+
+    if (!isManager) {
+        return next();
+    }
+
+    // 1. Check in-memory state first (Strict Assignment)
+    const activeState = managerStates.get(senderId);
+    if (!activeState || !activeState.orderId) {
+        // --- NEW: Admin-to-User Direct Messaging via ID ---
+        if (ctx.message.text && /^\d{6,15}\s+/.test(ctx.message.text.trim())) {
+            const match = ctx.message.text.trim().match(/^(\d{6,15})\s+([\s\S]+)$/);
+            if (match) {
+                const targetId = match[1];
+                const text = match[2];
+                try {
+                    const header = `💬 **Сообщение от Администрации:**\n\n`;
+                    await bot.telegram.sendMessage(targetId, header + text, { parse_mode: 'Markdown' });
+                    return ctx.reply(`✅ Сообщение отправлено пользователю [${targetId}](tg://user?id=${targetId})`, { parse_mode: 'Markdown' });
+                } catch (err) {
+                    return ctx.reply(`❌ Ошибка отправки пользователю ${targetId}: ${err.message}`);
+                }
+            }
+        }
+
+        // --- HYBRID SUPPORT: Handled in the main handlers below ---
+        if (activeState?.contactId) {
+             // We return next() here to let the hybrid logic below take over, 
+             // but we keep this check for safety or we can just let it fall through.
+             return next();
+        }
+
+        if (ctx.message.photo || ctx.message.document) {
+            return ctx.reply("❌ Ошибка: вы не выбрали заказ.\nСначала нажмите кнопку «Отправить eSIM» под нужным заказом в ленте, чтобы закрепить его за собой.");
+        }
+        return next();
+    }
+
+    // --- MANAGER QR/LINK SUBMISSION FLOW ---
+    // Fetch the order from DB using the ID we tracked in RAM
+    const { data: pendingOrder } = await supabase
+        .from('orders').select('*')
+        .eq('id', activeState?.orderId)
+        .single();
+
+    if (pendingOrder) {
+        const orderId = pendingOrder.id;
+        const userId = pendingOrder.user_id;
+
+        // Atomic check: Only proceed if status is STILL 'awaiting_qr'
+        const { data: updated, error: updateError } = await supabase
+            .from('orders')
+            .update({ status: 'paid', assigned_manager: null })
+            .eq('id', orderId)
+            .eq('status', 'awaiting_qr')
+            .select();
+
+        if (updateError || !updated || updated.length === 0) {
+            managerStates.delete(senderId); // Clean up state regardless
+            return ctx.reply('❌ Ошибка: Заказ уже был выполнен другим менеджером или отменен.');
+        }
+
+        const caption = `🎉 Ваш eSIM готов!
+
+Вот данные для установки — приятного путешествия! 🌍
+
+Перейдите по ссылке, введите код доступа и следуйте простой инструкции на экране.
+
+Если возникнут вопросы, я всегда помогу Вам быстро разобраться и подключиться 🚀`;
+
+        let qrSent = false;
+        try {
+            if (ctx.message.photo) {
+                const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+                await bot.telegram.sendPhoto(userId, photoId, { caption: ctx.message.caption ? `${caption}\n${ctx.message.caption}` : caption });
+                qrSent = true;
+            } else if (ctx.message.document) {
+                await bot.telegram.sendDocument(userId, ctx.message.document.file_id, { caption: ctx.message.caption ? `${caption}\n${ctx.message.caption}` : caption });
+                qrSent = true;
+            } else if (ctx.message.text) {
+                const messageRu = `🎉 Ваш eSIM готов!
+
+Вот данные для установки — приятного путешествия! 🌍
+
+Перейдите по ссылке, введите код доступа и следуйте простой инструкции на экране.
+
+Если возникнут вопросы, я всегда помогу Вам быстро разобраться и подключиться 🚀
+
+` + ctx.message.text;
+                await bot.telegram.sendMessage(userId, messageRu);
+                qrSent = true;
+            }
+        } catch (err) {
+            console.error('Failed to send payload to client:', err.message);
+            return ctx.reply('❌ Ошибка отправки клиенту. Сообщите разработчику.');
+        }
+
+        if (qrSent) {
+            managerStates.delete(senderId); // Clear active tracking
+ 
+            // --- REFERRAL PAYOUT: 20% of tariff price ---
+            try {
+                const { data: buyer } = await supabase.from('users').select('referrer_id').eq('telegram_id', userId).single();
+                if (buyer?.referrer_id && (pendingOrder.price_usd || pendingOrder.price_rub)) {
+                    const priceRub = pendingOrder.price_rub || Math.round(pendingOrder.price_usd * 100);
+                    const reward = Math.round(priceRub * 0.20);
+                    const { data: refUser } = await supabase.from('users').select('balance').eq('telegram_id', buyer.referrer_id).single();
+                    const newBalance = (refUser?.balance || 0) + reward;
+                    await supabase.from('users').update({ balance: newBalance }).eq('telegram_id', buyer.referrer_id);
+
+                    // Log commission in RUB
+                    await supabase.from('chat_history').insert({
+                        user_id: buyer.referrer_id,
+                        role: 'assistant',
+                        content: `COMMISSION_RECORD:${reward}:order_${pendingOrder.id}:buyer_${userId}`,
+                        created_at: new Date().toISOString()
+                    }).then(({ error }) => { if (error) console.error('Commission log error:', error.message); });
+
+                    try {
+                        const refRu = `💰 Вам начислено ₽${reward} (20% от продажи eSIM)! Ваш новый баланс: ₽${newBalance}`;
+                        await bot.telegram.sendMessage(buyer.referrer_id, refRu);
+                    } catch (e) { }
+                }
+            } catch (e) {
+                console.error('Referral payout error:', e.message);
+            }
+
+            // Schedule delayed promo message (2 minutes)
+            await scheduleFollowup(userId);
+
+            // Visual reset for the Manager (remove buttons, mark as done)
+            if (activeState.messageId) {
+                try {
+                    const originalText = activeState.originalText || "Данные отправлены пользователю!";
+                    const cleanText = originalText.replace(/\n\n⏳ ОЖИДАНИЕ.*/g, '');
+                    await bot.telegram.editMessageText(
+                        senderId,
+                        activeState?.messageId,
+                        undefined,
+                        `✅ **ОТПРАВЛЕН (Завершено)**\n\n${cleanText}`,
+                        Markup.inlineKeyboard([[Markup.button.callback('✉️ Написать клиенту', `contactuser_${userId}`)]])
+                    );
+                } catch (e) { console.error('Visual reset error:', e.message); }
+            }
+
+            return ctx.reply('✅ Данные (ссылка/QR) успешно отправлены. Покупка зачтена (paid) и начислены бонусы.');
+        }
+    }
+    return next();
+});
+
+// --- CLIENT FLOW ---
+
+bot.start(async (ctx) => {
+    const telegramId = ctx.from.id;
+    const username = ctx.from.username || 'User';
+    const startPayload = ctx.payload;
+
+    try {
+        console.log(`[START] Triggered for ${username} (${telegramId})`);
+        await clearHistory(telegramId);
+
+        if (startPayload === 'getqr') {
+            const botUsername = botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+            const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
+            const text = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}&margin=10`;
+            try { await ctx.replyWithPhoto(qrUrl, { caption: text, parse_mode: 'Markdown' }); } catch (e) { }
+        }
+
+        let { data: user } = await getUser(telegramId);
+        if (!user) {
+            const rId = startPayload && !isNaN(startPayload) ? parseInt(startPayload) : null;
+            const { data: newUser } = await createUser({
+                telegram_id: telegramId, username, role: 'client',
+                lang_code: 'ru',
+                referrer_id: (rId && rId !== telegramId) ? rId : null
+            });
+            user = newUser;
+        } else if (startPayload && !isNaN(startPayload) && !user.referrer_id) {
+            // Existing user without a referrer came via a referral link — assign now
+            const rId = parseInt(startPayload);
+            if (rId !== telegramId) {
+                await supabase.from('users').update({ referrer_id: rId }).eq('telegram_id', telegramId);
+                user = { ...user, referrer_id: rId };
+                console.log(`[START] Assigned referrer ${rId} to existing user ${telegramId}`);
+            }
+        }
+
+        const welcomeLang = 'ru';
+        userLangCache[telegramId] = 'ru';
+
+        // Sync DB
+        try {
+            await updateUser(telegramId, { lang_code: 'ru' });
+        } catch (e) { }
+
+        const welcomeRuPart1 = `Привет! 🚀
+Я — Ваш персональный ИИ-менеджер от eMedeo 🤖
+Помогу Вам:
+✔️ подобрать лучший тариф eSIM под Вашу поездку
+✔️ сэкономить на дорогом роуминге
+✔️ оставаться на связи сразу после прилёта
+
+💬 **Связь с менеджером:** Если у Вас возник вопрос или нужно отправить чек об оплате — просто присылайте его прямо сюда, менеджер всё увидит и ответит Вам!
+
+📲 Быстро, удобно и всё онлайн за пару минут.`;
+
+        const welcomeRuPart2 = `Рекомендую перед покупкой eSIM проверить, поддерживает ли Ваш телефон
+технологию eSIM 📱
+Это важно, потому что не все устройства работают с eSIM, и Вы сможете
+избежать лишних затрат и проблем с подключением.
+Откройте  «Телефон» (набор номера).
+Введите *#06#.
+Если устройство поддерживает eSIM, в появившемся окне отобразится
+строка «EID» и его номер.
+Так куда планируете  лететь? 🌍 — подберу идеальный для Вас вариант 👇`;
+
+        const welcomeText1 = welcomeRuPart1;
+
+        // Cleanup stale keyboards
+        try { const k = await ctx.reply('…', Markup.removeKeyboard()); await bot.telegram.deleteMessage(ctx.chat.id, k.message_id); } catch (e) { }
+
+        await ctx.reply(welcomeText1,
+            Markup.keyboard([
+                [Markup.button.webApp('📱 Открыть Дашборд', `${process.env.WEBAPP_URL || 'https://esim.ticaretai.tr'}?uid=${telegramId}`)]
+            ]).resize()
+        );
+        console.log(`[START] Welcome Part 1 sent to ${username}`);
+
+        setTimeout(async () => {
+            try {
+                const welcomeText2 = welcomeRuPart2;
+                await bot.telegram.sendMessage(telegramId, welcomeText2);
+                console.log(`[START] Welcome Part 2 sent to ${username}`);
+            } catch (err) {
+                console.error('[START Part 2] Error:', err.message);
+            }
+        }, 2000);
+
+    } catch (err) {
+        console.error('[START] Fatal Error:', err.message);
+        try { await ctx.reply('Привет! Я твой eSIM-менеджер. Открой дашборд или напиши страну, куда летишь!'); } catch (e) { }
+    }
+});
+
+bot.command('ref', async (ctx) => {
+    const telegramId = ctx.from.id;
+    const refLink = `https://t.me/emedeoesimworld_bot?start=${telegramId}`;
+
+    const textRu = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
+    
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}&margin=10`;
+
+    try {
+        await ctx.replyWithPhoto(qrUrl, { caption: textRu, parse_mode: 'Markdown' });
+    } catch (err) {
+        await ctx.reply(textRu, { parse_mode: 'Markdown', disable_web_page_preview: true });
+    }
+});
+
+bot.on('message', async (ctx, next) => {
+    if (ctx.message?.web_app_data) {
+        const data = ctx.message.web_app_data.data;
+        console.log('[WEB APP DATA RECEIVED]', data);
+        if (data === '/ref') {
+            const telegramId = ctx.from.id;
+            const lang = userLangCache[telegramId] || ctx.from.language_code || 'en';
+            const refLink = `https://t.me/emedeoesimworld_bot?start=${telegramId}`;
+
+            const textRu = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
+            const text = await getLocalizedText(lang, textRu);
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}&margin=10`;
+
+            try {
+                await ctx.replyWithPhoto(qrUrl, { caption: text, parse_mode: 'Markdown' });
+            } catch (err) {
+                await ctx.reply(text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+            }
+        } else {
+            let parsed = null;
+            try { parsed = JSON.parse(data); } catch(e) {}
+            if (parsed && parsed.action === 'buy') {
+                const tariffId = parsed.tariffId;
+                const telegramId = ctx.from.id;
+                const username = ctx.from.username || ctx.from.first_name;
+                
+                let { data: tariffs } = await getTariffs();
+                tariffs = tariffs || [];
+                const tariff = tariffs.find(t => t.id === tariffId);
+
+                if (tariff) {
+                    try {
+                        const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_usd);
+                        
+                        const uiLang = 'ru';
+                        const lt = locTariff(tariff);
+                        
+                        const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+                        const managerPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+                        const successRu = `Выбранный тариф: ${lt.country} | ${lt.data_gb} на ${lt.validity} — ${userPriceText}`;
+                        let finalResponse = successRu;
+                        
+                        const payTextRu = `\n\n👇 **Оплатить онлайн:**\n${tariff.payment_link || 'Обратись к менеджеру'}\n\n✅ *Сразу после успешной оплаты мы вышлем твой тариф!*`;
+                        finalResponse += payTextRu;
+                        
+                        await saveMessage(telegramId, 'assistant', finalResponse);
+                        
+                        try {
+                            await ctx.reply(finalResponse, { parse_mode: 'Markdown' });
+                        } catch (mdError) {
+                            await ctx.reply(finalResponse);
+                        }
+                        if (tariff.payment_qr_url) {
+                            let finalQrUrl = tariff.payment_qr_url;
+                            if (finalQrUrl.includes('drive.google.com')) {
+                                const match = finalQrUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                                if (match && match[1]) {
+                                    finalQrUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                                }
+                            }
+                            const qrCaption = `QR-код для оплаты тарифа ${lt.country}`;
+                            try {
+                                await ctx.replyWithPhoto(finalQrUrl, { caption: qrCaption });
+                            } catch (err) {}
+                        }
+
+                        const { data: buyer } = await getUser(telegramId);
+                        const referrerId = buyer?.referrer_id;
+
+                        const { data: allAdmins } = await supabase.from('users').select('telegram_id, role').in('role', ['founder', 'admin', 'manager']);
+                        const alertManagers = (allAdmins || []).filter(m => m.role === 'founder' || m.role === 'admin' || m.telegram_id === referrerId);
+                        if (alertManagers.length > 0) {
+                            // Calculate 15% commission as profit
+                            const profitRUB = Math.round((tariff.price_rub || tariff.price_usd * 100) * 0.15);
+                            const profitText = `💰 Прибыль: ₽${profitRUB}`;
+
+                            for (const manager of alertManagers) {
+                                try {
+                                    const mtFinal = {
+                                        alert: `🚀 **ЗАКАЗ (КАТАЛОГ)!**\n\nЮзер: @${username} (ID: ${telegramId})\nТариф: ${lt.country} | ${lt.data_gb} на ${lt.validity}\nЦена: ${managerPriceText}\n${profitText}\n\n⚠️ ВАЖНО: Подтвердите оплату перед тем как скидывать eSIM-код!`,
+                                        sendBtn: '📤 Отправить eSIM',
+                                        contactBtn: '✉️ Написать клиенту'
+                                    };
+                                    const buttons = (orderData && orderData.id) 
+                                        ? Markup.inlineKeyboard([
+                                            [Markup.button.callback(mtFinal.sendBtn, `sendqr_${orderData.id}`)],
+                                            [Markup.button.callback(mtFinal.contactBtn, `contactuser_${telegramId}`)]
+                                        ]) 
+                                        : {};
+                                    await bot.telegram.sendMessage(manager.telegram_id, mtFinal.alert, buttons);
+                                } catch (e) {}
+                            }
+                        }
+                    } catch (e) { 
+                        console.error('Sale flow error:', e.message); 
+                        await ctx.reply('❌ System error during checkout.');
+                    }
+                } else {
+                    await ctx.reply('❌ Tariff not found in database: ' + tariffId);
+                }
+            } else {
+                await ctx.reply('❌ Invalid action received: ' + data);
+            }
+        }
+        return;
+    }
+    return next();
+});
+
+// --- NEW: Forward Photos/Documents from Users to Admins ---
+bot.on(['photo', 'document', 'video', 'animation', 'voice'], async (ctx, next) => {
+    const senderId = ctx.from.id;
+    const { data: user } = await getUser(senderId);
+    
+    // Ensure language cache is set for attachments
+    const currentLang = userLangCache[senderId] || ctx.from.language_code || 'ru';
+
+    // --- HYBRID: Client-side One-off Support Mode ---
+    const isSupportActive = (user && user.is_support_mode) || clientStates.has(senderId);
+    if (isSupportActive) {
+        try {
+            const { data: admins } = await supabase.from('users').select('telegram_id').in('role', ['founder', 'admin']);
+            if (admins && admins.length > 0) {
+                const name = esc(ctx.from.first_name + (ctx.from.last_name ? ` ${ctx.from.last_name}` : ''));
+                const username = ctx.from.username ? `@${esc(ctx.from.username)}` : 'нет username';
+                const infoText = `📩 **Сообщение в поддержку (Медиа)!**\n\nОт: ${name} (${username})\nID: \`${senderId}\`\n[Профиль](tg://user?id=${senderId})`;
+                const contactButtons = Markup.inlineKeyboard([[Markup.button.callback('✉️ Написать клиенту', `contactuser_${senderId}`)]]);
+                
+                const caption = infoText + (ctx.message.caption ? `\n\n📝 Сообщение: ${esc(ctx.message.caption)}` : '');
+                for (const admin of admins) {
+                    try {
+                        if (ctx.message.photo) {
+                            await bot.telegram.sendPhoto(admin.telegram_id, ctx.message.photo[ctx.message.photo.length - 1].file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                        } else if (ctx.message.document) {
+                            await bot.telegram.sendDocument(admin.telegram_id, ctx.message.document.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                        } else if (ctx.message.video) {
+                            await bot.telegram.sendVideo(admin.telegram_id, ctx.message.video.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                        } else if (ctx.message.animation) {
+                            await bot.telegram.sendAnimation(admin.telegram_id, ctx.message.animation.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                        } else if (ctx.message.voice) {
+                            await bot.telegram.sendVoice(admin.telegram_id, ctx.message.voice.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                        }
+                    } catch (adminErr) { console.error(`Admin notify error ${admin.telegram_id}:`, adminErr.message); }
+                }
+                await updateUser(senderId, { is_support_mode: false });
+                clientStates.delete(senderId); // Sync
+                const successRu = "✅ Ваше вложение передано менеджеру. Спасибо!";
+                const successMsg = await getLocalizedText(currentLang, successRu);
+                return ctx.reply(successMsg);
+            }
+        } catch (e) { console.error('Media support forward error:', e.message); }
+    }
+
+    // --- HYBRID: ONE-OFF SUPPORT MODE for managers ---
+    const managerContactId = (user && user.manager_contact_id) || (managerStates.get(senderId)?.contactId);
+    if (managerContactId) {
+        const targetId = managerContactId;
+        const text = ctx.message.caption || '';
+        try {
+            if (ctx.message.photo) {
+                await bot.telegram.sendPhoto(targetId, ctx.message.photo[ctx.message.photo.length - 1].file_id, { caption: `💬 **Администратор:**\n${text}` });
+            } else if (ctx.message.document) {
+                await bot.telegram.sendDocument(targetId, ctx.message.document.file_id, { caption: `💬 **Администратор:**\n${text}` });
+            } else if (ctx.message.video) {
+                await bot.telegram.sendVideo(targetId, ctx.message.video.file_id, { caption: `💬 **Администратор:**\n${text}` });
+            } else if (ctx.message.animation) {
+                await bot.telegram.sendAnimation(targetId, ctx.message.animation.file_id, { caption: `💬 **Администратор:**\n${text}` });
+            } else if (ctx.message.voice) {
+                await bot.telegram.sendVoice(targetId, ctx.message.voice.file_id, { caption: `💬 **Администратор:**\n${text}` });
+            }
+            const { updateUser } = require('./src/supabase');
+            await updateUser(senderId, { manager_contact_id: null });
+            managerStates.delete(senderId); // Sync
+            return ctx.reply('✅ Отправлено клиенту. Режим чата выключен.');
+        } catch (e) { return ctx.reply('❌ Ошибка отправки клиенту.'); }
+    }
+
+    // Only forward immediately if it's a client (managers/admins are handled above)
+    // We include !user.role to ensure NEW users can also send receipts immediately
+    if (!user || !user.role || user.role === 'client') {
+        const { data: admins } = await supabase.from('users').select('telegram_id').in('role', ['founder', 'admin']);
+        if (admins && admins.length > 0) {
+            const name = esc(ctx.from.first_name + (ctx.from.last_name ? ` ${ctx.from.last_name}` : ''));
+            const username = ctx.from.username ? `@${esc(ctx.from.username)}` : 'нет username';
+            const infoText = `📩 **Новое вложение от клиента!**\n\nОт: ${name} (${username})\nID: \`${senderId}\`\n[Профиль](tg://user?id=${senderId})`;
+            
+            const contactButtons = Markup.inlineKeyboard([[Markup.button.callback('✉️ Написать клиенту', `contactuser_${senderId}`)]]);
+            
+            for (const admin of admins) {
+                try {
+                    const caption = infoText + (ctx.message.caption ? `\n\n📝 Сообщение: ${esc(ctx.message.caption)}` : '');
+                    if (ctx.message.photo) {
+                        await bot.telegram.sendPhoto(admin.telegram_id, ctx.message.photo[ctx.message.photo.length - 1].file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                    } else if (ctx.message.document) {
+                        await bot.telegram.sendDocument(admin.telegram_id, ctx.message.document.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                    } else if (ctx.message.video) {
+                        await bot.telegram.sendVideo(admin.telegram_id, ctx.message.video.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                    } else if (ctx.message.animation) {
+                        await bot.telegram.sendAnimation(admin.telegram_id, ctx.message.animation.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                    } else if (ctx.message.voice) {
+                        await bot.telegram.sendVoice(admin.telegram_id, ctx.message.voice.file_id, { caption, parse_mode: 'Markdown', ...contactButtons });
+                    }
+                } catch (e) { console.error('Forward to admin error:', e.message); }
+            }
+            const confirmRu = `✅ Я получил Ваш файл и сообщение. Я уже передал их менеджеру, мы скоро ответим Вам!`;
+            const confirmMsg = await getLocalizedText(currentLang, confirmRu);
+            return ctx.reply(confirmMsg);
+        }
+    }
+    return next();
+});
+
+bot.on('text', async (ctx) => {
+    const telegramId = ctx.from.id;
+    const { data: user } = await getUser(telegramId);
+    const currentLang = userLangCache[telegramId] || ctx.from.language_code || 'ru';
+    
+    // --- HYBRID: Client Forwarding (One-off) ---
+    const isSupportActive = (user && user.is_support_mode) || clientStates.has(telegramId);
+    if (isSupportActive) {
+        try {
+            const { data: admins } = await supabase.from('users').select('telegram_id').in('role', ['founder', 'admin']);
+            if (admins && admins.length > 0) {
+                const name = esc(ctx.from.first_name + (ctx.from.last_name ? ` ${ctx.from.last_name}` : ''));
+                const username = ctx.from.username ? `@${esc(ctx.from.username)}` : 'нет username';
+                const alertText = `📩 **Сообщение в поддержку (Текст)!**\nЮзер: ${name} (ID: ${telegramId})\nТекст: ${esc(ctx.message.text)}`;
+                const buttons = Markup.inlineKeyboard([[Markup.button.callback('✉️ Написать клиенту', `contactuser_${telegramId}`)]]);
+                for (const admin of admins) {
+                    try { await bot.telegram.sendMessage(admin.telegram_id, alertText, { parse_mode: 'Markdown', ...buttons }); } catch (e) {}
+                }
+                await updateUser(telegramId, { is_support_mode: false });
+                clientStates.delete(telegramId); // Sync
+                const successRu = "✅ Ваше сообщение передано менеджеру. Спасибо!";
+                const successMsg = await getLocalizedText(currentLang, successRu);
+                return ctx.reply(successMsg);
+            }
+        } catch (e) { console.error('Client text forward error:', e.message); }
+    }
+    // --- HYBRID: Manager Support Mode ---
+    const managerContactId = (user && user.manager_contact_id) || (managerStates.get(telegramId)?.contactId);
+    if (managerContactId) {
+        try {
+            await bot.telegram.sendMessage(managerContactId, ctx.message.text);
+            await updateUser(telegramId, { manager_contact_id: null });
+            managerStates.delete(telegramId); // Sync
+            return ctx.reply('✅ Сообщение отправлено клиенту. Режим чата выключен.');
+        } catch (e) { return ctx.reply('❌ Ошибка отправки.'); }
+    }
+
+    // HYBRID: Manager awaiting QR code
+    const isAwaitingQr = (user && user.waiting_order_id) || (managerStates.has(telegramId) && managerStates.get(telegramId).orderId);
+    if (isAwaitingQr) return; 
+
+    const username = ctx.from.username || ctx.from.first_name;
+    const userText = ctx.message.text.trim();
+
+    try {
+        // user already loaded at start of handler
+        const systemLang = ctx.from.language_code || 'en';
+        if (!userLangCache[telegramId]) {
+            userLangCache[telegramId] = user?.lang_code || systemLang;
+        }
+        const uiLang = userLangCache[telegramId];
+
+        // --- Forwarding moved below AI analysis to use 'intent' ---
+
+        if (!user) {
+        const msgRu = 'Нажми /start для начала.';
+        const msg = await getLocalizedText(systemLang, msgRu);
+        return ctx.reply(msg, Markup.removeKeyboard());
+    }
+
+    // --- PROMO CODE LOGIC ---
+    if (!user.referrer_id && /^\d{6,15}$/.test(userText)) {
+        const promoId = parseInt(userText);
+        if (promoId !== telegramId) {
+            const { data: promoUser } = await getUser(promoId);
+            if (promoUser) {
+                await supabase.from('users').update({ referrer_id: promoId }).eq('telegram_id', telegramId);
+                user.referrer_id = promoId;
+
+                const successRu = '✅ Промокод успешно применен! Спасибо.\n\nА теперь подскажи, куда летим? 🌍';
+                const successText = await getLocalizedText(uiLang, successRu);
+                return ctx.reply(successText);
+            }
+        }
+
+        const failRu = '❌ Неверный или недействительный промокод.';
+        const failText = await getLocalizedText(uiLang, failRu);
+        return ctx.reply(failText);
+    }
+
+    const { data: history } = await getHistory(telegramId);
+    let { data: tariffs } = await getTariffs();
+    if (!tariffs) tariffs = []; // Safe fallback
+
+    try { await ctx.sendChatAction('typing'); } catch (e) { }
+
+    const { data: faqRows, error: faqError } = await getFaq();
+    let faqText = faqRows ? faqRows.map(f => `- ${f.topic}: ${f.content_ru}`).join('\n') : '';
+    if (faqError) console.error('[FAQ] Supabase error:', faqError.message);
+
+    // Get AI response
+    const aiResponse = await getChatResponse(tariffs, faqText, history || [], userText);
+
+    const langMatch = aiResponse.match(/\[LANG:\s*([a-z]{2})\]/i);
+    if (langMatch) {
+        const newLang = langMatch[1].toLowerCase();
+        if (newLang !== userLangCache[telegramId]) {
+            userLangCache[telegramId] = newLang;
+            try {
+                const { updateUser } = require('./src/supabase');
+                await updateUser(telegramId, { lang_code: newLang });
+            } catch (e) { console.error('Lang Update Error:', e.message); }
+        }
+    }
+
+    const saleMatch = aiResponse.match(/\[SALE_REQUEST:\s*([a-zA-Z0-9_-]+)\]/i);
+    const supportMatch = aiResponse.includes('[SUPPORT_REQUEST]');
+    
+    let finalResponse = aiResponse
+        .replace(/\[SALE_REQUEST:.*?\]/gi, '')
+        .replace(/\[SUPPORT_REQUEST\]/gi, '')
+        .replace(/\[LANG:.*?\]/gi, '')
+        .trim();
+
+    // --- HYBRID: Handle Support Activation from AI ---
+    if (supportMatch && (!user || user.role === 'client')) {
+        await updateUser(telegramId, { is_support_mode: true });
+        clientStates.set(telegramId, { active: true }); // Fallback
+        const cancelBtn = Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'cancel_support_client')]]);
+        try {
+            await ctx.reply(finalResponse, { parse_mode: 'Markdown', ...cancelBtn });
+        } catch (e) {
+            await ctx.reply(finalResponse, cancelBtn);
+        }
+        return;
+    }
+    // NOTE: The AI Writer already responds in the correct language (lang_code from Analyzer).
+    // Do NOT call getLocalizedText here — it would corrupt the already-translated text.
+
+    if (saleMatch) {
+                        const tariffId = saleMatch[1];
+        const tariff = tariffs.find(t => t.id === tariffId);
+
+        if (tariff) {
+            try {
+                const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_usd);
+
+            const uiLang = userLangCache[telegramId] || ctx.from.language_code || 'en';
+            const ltAI = locTariff(tariff, uiLang);
+
+            const payTextRu = `\n\nВыбранный тариф: ${ltAI.country} | ${ltAI.data_gb} на ${ltAI.validity}\n\n👇 **Оплатить онлайн:**\n${tariff.payment_link || 'Обратись к менеджеру'}\n\n✅ *Сразу после успешной оплаты мы вышлем твой тариф!*`;
+            const payText = await getLocalizedText(uiLang, payTextRu);
+            finalResponse += payText;
+            // Schedule follow-up AFTER updating cache from [LANG:xx] tag above:
+            scheduleFollowup(telegramId, uiLang);
+
+            await saveMessage(telegramId, 'assistant', finalResponse);
+            try {
+                await ctx.reply(finalResponse, { parse_mode: 'Markdown' });
+            } catch (mdError) {
+                console.warn('[SALE] Markdown fallback triggered:', mdError.message);
+                await ctx.reply(finalResponse);
+            }
+
+            // Restore AI Payment QR Automated Reply
+            if (tariff.payment_qr_url) {
+                let finalQrUrl = tariff.payment_qr_url;
+                if (finalQrUrl.includes('drive.google.com')) {
+                    const match = finalQrUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                    if (match && match[1]) {
+                        finalQrUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                    }
+                }
+                const ltAI_qr = locTariff(tariff, userLangCache[telegramId] || 'ru');
+                const captionRu = `QR-код для оплаты тарифа ${ltAI_qr.country}`;
+                const qrCaption = await getLocalizedText(userLangCache[telegramId] || 'ru', captionRu);
+                try {
+                    await ctx.replyWithPhoto(finalQrUrl, { caption: qrCaption });
+                } catch (err) {
+                    console.error('Failed to send QR:', err.message);
+                }
+            }
+
+            const { data: userData } = await supabase.from('users').select('custom_note, referrer_id').eq('telegram_id', telegramId).single();
+            const userDisplay = userData?.custom_note ? `${userData.custom_note} (@${username || telegramId})` : `@${username || telegramId}`;
+            const referrerId = userData?.referrer_id;
+
+            // Находим всех менеджеров и фаундеров
+            const { data: allAdminsAI } = await supabase
+                .from('users')
+                .select('telegram_id, role')
+                .in('role', ['founder', 'admin', 'manager']);
+
+            const alertManagersAI = (allAdminsAI || []).filter(m => m.role === 'founder' || m.role === 'admin' || m.telegram_id === referrerId);
+
+            if (alertManagersAI.length > 0) {
+                for (const manager of alertManagersAI) {
+                    try {
+                        const mLangRaw = userLangCache[manager.telegram_id] || 'ru';
+                        const mLang = mLangRaw === 'ru' ? 'ru' : (mLangRaw === 'tr' ? 'tr' : 'en');
+                        const mltAI = locTariff(tariff, mLang);
+
+                        const managerTextsLocalizedAI = {
+                            ru: {
+                                alert: `🚀 **ЗАКАЗ!**\n\nЮзер: ${userDisplay} (ID: ${telegramId})\nТариф: ${mltAI.country} | ${mltAI.data_gb} на ${mltAI.validity}\nЦена: $${tariff.price_usd}\n\n⚠️ ВАЖНО: Подтвердите оплату перед тем как скидывать eSIM-код!`,
+                                sendBtn: '📤 Отправить eSIM (Код/Ссылка)',
+                                contactBtn: '✉️ Написать клиенту'
+                            },
+                            tr: {
+                                alert: `🚀 **SİPARİŞ!**\n\nKullanıcı: ${userDisplay} (ID: ${telegramId})\nTarife: ${mltAI.country} | ${mltAI.data_gb} - ${mltAI.validity}\nFiyat: $${tariff.price_usd}\n\n⚠️ ÖNEMLİ: Link veya QR'ı göndermeden önce ödemeyi onaylayın!`,
+                                sendBtn: '📤 eSIM Gönder',
+                                contactBtn: '✉️ Müşteriye Yaz'
+                            },
+                            en: {
+                                alert: `🚀 **ORDER!**\n\nUser: ${userDisplay} (ID: ${telegramId})\nPlan: ${mltAI.country} | ${mltAI.data_gb} for ${mltAI.validity}\nPrice: $${tariff.price_usd}\n\n⚠️ IMPORTANT: Verify payment before sending the Link/Code!`,
+                                sendBtn: '📤 Send eSIM (Code/Link)',
+                                contactBtn: '✉️ Write to Client'
+                            }
+                        };
+                        const mtFinalAI = managerTextsLocalizedAI[mLang] || managerTextsLocalizedAI['en'];
+
+                                // Safely handle orderData.id null check
+                                const buttons = (orderData && orderData.id) 
+                                    ? Markup.inlineKeyboard([
+                                        [Markup.button.callback(mtFinalAI.sendBtn, `sendqr_${orderData.id}`)],
+                                        [Markup.button.callback(mtFinalAI.contactBtn, `contactuser_${telegramId}`)]
+                                    ]) 
+                                    : {};
+
+                                await bot.telegram.sendMessage(manager.telegram_id, mtFinalAI.alert, buttons);
+                            } catch (e) {
+                                console.error('Manager notify error:', e.message);
+                            }
+                }
+            }
+            return; // Exit here since we replied
+            } catch (e) { console.error('Sale flow error:', e.message); }
+        } else {
+            console.log(`[SALE] Tariff ${tariffId} not found in DB!`);
+            const errRu = `\n❌ Ошибка: Тариф "${tariffId}" не найден в базе. Менеджер скоро подключится.`;
+            finalResponse += await getLocalizedText(uiLang, errRu);
+        }
+    }
+
+        if (!finalResponse || finalResponse.trim() === '') {
+            finalResponse = 'Пожалуйста, подожди минуту или напиши менеджеру.';
+        }
+
+        await saveMessage(telegramId, 'assistant', finalResponse);
+        try {
+            await ctx.reply(finalResponse, { parse_mode: 'Markdown' });
+        } catch (mdError) {
+            console.warn('[GENERIC] Markdown fallback triggered:', mdError.message);
+            await ctx.reply(finalResponse);
+        }
+
+    } catch (err) {
+        console.error('CRITICAL BOT ERROR:', err);
+        try {
+            await ctx.reply('Извини, я приуныл. Попробуй позже (System Error).');
+        } catch (e) { }
+    }
+});
+
+bot.action(/^sendqr_(.+)$/, async (ctx) => {
+    const orderId = ctx.match[1];
+    const telegramId = ctx.from.id;
+
+    const { data: user } = await getUser(telegramId);
+    if (!user || (user.role !== 'founder' && user.role !== 'manager' && user.role !== 'admin')) {
+        return ctx.answerCbQuery('❌ У вас нет прав для подтверждения.', { show_alert: true });
+    }
+
+    const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
+    if (!order) return ctx.answerCbQuery('❌ Заказ не найден.', { show_alert: true });
+
+    if (order.status === 'paid') {
+        return ctx.answerCbQuery('❌ Заказ уже был оплачен и отправлен!', { show_alert: true });
+    }
+    if (order.status === 'awaiting_qr' && order.assigned_manager !== telegramId) {
+        return ctx.answerCbQuery('❌ Этот заказ прямо сейчас обрабатывает другой менеджер.', { show_alert: true });
+    }
+    if (order.status === 'cancelled') {
+        return ctx.answerCbQuery('❌ Этот заказ был отменен.', { show_alert: true });
+    }
+
+    // Clear any RAM state just in case
+    managerStates.delete(telegramId);
+    
+    // Persist awaiting state strictly from pending state (Database-backed)
+    const { data: updated, error: updateErr } = await supabase.from('orders')
+        .update({ status: 'awaiting_qr', assigned_manager: telegramId })
+        .eq('id', orderId)
+        .eq('status', 'pending')
+        .select();
+
+    if (updateErr || !updated || updated.length === 0) {
+        // Double check if we already own it
+        if (order.assigned_manager !== telegramId) {
+            return ctx.answerCbQuery('❌ Заказ недоступен для взятия в работу.', { show_alert: true });
+        }
+    }
+
+    await updateUser(telegramId, { waiting_order_id: orderId });
+
+    try {
+        await ctx.editMessageText(
+            ctx.callbackQuery.message.text + '\n\n⏳ ОЖИДАНИЕ: Отправьте АКТИВАЦИОННУЮ ССЫЛКУ или eSIM-КОД в ответ на это сообщение!',
+            Markup.inlineKeyboard([
+                [Markup.button.callback('❌ Отменить ожидание', `cancelqr_${orderId}`)]
+            ])
+        );
+    } catch (e) { }
+
+    await ctx.answerCbQuery('⏳ Отправьте в чат ссылку или eSIM-код для клиента.', { show_alert: true });
+});
+
+bot.action(/^cancelqr_(.+)$/, async (ctx) => {
+    const orderId = ctx.match[1];
+    const telegramId = ctx.from.id;
+
+    const { data: user } = await getUser(telegramId);
+    if (!user || (user.role !== 'founder' && user.role !== 'manager' && user.role !== 'admin')) {
+        return ctx.answerCbQuery('❌ У вас нет прав.', { show_alert: true });
+    }
+
+    // Clear states
+    managerStates.delete(telegramId);
+    await updateUser(telegramId, { waiting_order_id: null });
+    await supabase.from('orders').update({ status: 'pending', assigned_manager: null }).eq('id', orderId);
+
+    try {
+        await ctx.editMessageText(
+            ctx.callbackQuery.message.text.replace('\n\n⏳ ОЖИДАНИЕ: Отправьте АКТИВАЦИОННУЮ ССЫЛКУ или QR-код в ответ на это сообщение!', '') + '\n\n🛑 Ожидание отменено оператором.',
+            Markup.inlineKeyboard([
+                [
+                    Markup.button.callback('📤 Отправить eSIM', `sendqr_${orderId}`),
+                    Markup.button.callback('❌ Отменить', `cancel_${orderId}`)
+                ]
+            ])
+        );
+    } catch (e) { }
+
+    await ctx.answerCbQuery('Ожидание отменено.');
+});
+
+// --- NEW callbacks for contact user flow ---
+bot.action(/^contactuser_(.+)$/, async (ctx) => {
+    const userId = ctx.match[1];
+    const telegramId = ctx.from.id;
+
+    const { data: user } = await getUser(telegramId);
+    if (!user || (user.role !== 'founder' && user.role !== 'manager' && user.role !== 'admin')) return ctx.answerCbQuery('❌ Нет прав.');
+
+    managerStates.set(telegramId, { contactId: userId }); // Fallback
+    await updateUser(telegramId, { manager_contact_id: userId });
+    
+    await ctx.reply(`💬 Включен режим **одного сообщения** пользователю [${userId}](tg://user?id=${userId}).\n\nВаше **следующее** сообщение (текст, фото или файл) будет переслано ему, после чего режим чата автоматически выключится.\n\n⚠️ **ВАЖНО:** Если вы отправляете файл или фото, прикрепите текст как **ПОДПИСЬ** к нему (одним сообщением), иначе режим чата выключится сразу после файла.`, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([[Markup.button.callback('❌ Отмена', 'exit_contact')]])
+    });
+    await ctx.answerCbQuery();
+});
+
+bot.action('exit_contact', async (ctx) => {
+    const { updateUser } = require('./src/supabase');
+    await updateUser(ctx.from.id, { manager_contact_id: null });
+    await ctx.deleteMessage();
+    await ctx.reply('✅ Режим чата выключен. Теперь ваши сообщения не пересылаются клиенту.');
+    await ctx.answerCbQuery();
+});
+
+bot.action('cancel_support_client', async (ctx) => {
+    await updateUser(ctx.from.id, { is_support_mode: false });
+    try {
+        await ctx.editMessageText('❌ Обращение в поддержку отменено.');
+    } catch (e) {
+        await ctx.deleteMessage();
+        await ctx.reply('❌ Обращение в поддержку отменено.');
+    }
+    await ctx.answerCbQuery();
+});
+
+bot.action(/^cancel_(.+)$/, async (ctx) => {
+    const orderId = ctx.match[1];
+    const telegramId = ctx.from.id;
+
+    const { data: user } = await getUser(telegramId);
+    if (!user || (user.role !== 'founder' && user.role !== 'manager' && user.role !== 'admin')) {
+        return ctx.answerCbQuery('❌ У вас нет прав.', { show_alert: true });
+    }
+
+    // Safety clear in case they cancel the order while waiting for QR
+    managerStates.delete(telegramId);
+
+    await supabase.from('orders').update({ status: 'cancelled' }).eq('id', orderId);
+
+    try {
+        await ctx.editMessageText(
+            ctx.callbackQuery.message.text + '\n\n❌ ЗАКАЗ ОТМЕНЕН'
+        );
+    } catch (e) { }
+
+    await ctx.answerCbQuery('❌ Заказ отменен.');
+});
+
+// Если мы НЕ на Vercel (например, запускаем локально или на VPS)
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    bot.launch().then(() => console.log('Bot is running locally (Long Polling)...'));
+}
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// Экспортируем бота для Vercel (webhook)
+module.exports = bot;
