@@ -290,7 +290,8 @@ const App: React.FC = () => {
     }
   };
 
-  const refLink = user ? `https://t.me/emedeoesimworld_bot?start=${user.telegram_id}` : '';
+  const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+  const refLink = user ? `https://t.me/${botUsername}?start=${user.telegram_id}` : '';
 
   const copyToClipboard = (text: string) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {

@@ -53,12 +53,14 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
             if (tData.payment_link) {
                 tg.openLink(tData.payment_link);
             } else {
-                tg.openTelegramLink(`https://t.me/emedeoesimworld_bot?start=buy_${tData.id}`);
+                const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+                tg.openTelegramLink(`https://t.me/${botUsername}?start=buy_${tData.id}`);
             }
             setTimeout(() => tg.close(), 500); 
         } catch (e) {
             console.error(e);
-            tg.openTelegramLink(`https://t.me/emedeoesimworld_bot?start=buy_${tData.id}`);
+            const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+            tg.openTelegramLink(`https://t.me/${botUsername}?start=buy_${tData.id}`);
             tg.close();
         } finally {
             setBuyLoading(null);

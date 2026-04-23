@@ -245,7 +245,7 @@ bot.start(async (ctx) => {
         await clearHistory(telegramId);
 
         if (startPayload === 'getqr') {
-            const botUsername = botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+            const botUsername = process.env.BOT_USERNAME || botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
             const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
             const text = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}&margin=10`;
@@ -330,7 +330,8 @@ bot.start(async (ctx) => {
 
 bot.command('ref', async (ctx) => {
     const telegramId = ctx.from.id;
-    const refLink = `https://t.me/emedeoesimworld_bot?start=${telegramId}`;
+    const botUsername = process.env.BOT_USERNAME || botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+    const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
 
     const textRu = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
     
@@ -350,7 +351,8 @@ bot.on('message', async (ctx, next) => {
         if (data === '/ref') {
             const telegramId = ctx.from.id;
             const lang = userLangCache[telegramId] || ctx.from.language_code || 'en';
-            const refLink = `https://t.me/emedeoesimworld_bot?start=${telegramId}`;
+            const botUsername = process.env.BOT_USERNAME || botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+            const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
 
             const textRu = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
             const text = await getLocalizedText(lang, textRu);
