@@ -81,8 +81,10 @@ module.exports = {
         } catch (error) {
             console.error('[OpenAI Fatal Error]:', error.message);
             if (error.response) {
-                console.error('[OpenAI Status]:', error.response.status);
-                console.error('[OpenAI Data]:', error.response.data);
+                console.error('[OpenAI Response Status]:', error.response.status);
+                console.error('[OpenAI Response Data]:', JSON.stringify(error.response.data));
+            } else if (error.error) {
+                console.error('[OpenAI Error Details]:', JSON.stringify(error.error));
             }
             return 'Извини, я приуныл. Попробуй позже.';
         }
