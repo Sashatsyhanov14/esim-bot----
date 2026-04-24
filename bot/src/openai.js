@@ -4,7 +4,9 @@ const dotenv = require('dotenv');
 const { ANALYZER_PROMPT, WRITER_PROMPT, LOCALIZER_PROMPT } = require('./prompts');
 
 const path = require('path');
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+console.log('[DEBUG] OpenRouter Key loaded:', process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY ? 'YES' : 'NO');
 
 const openai = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
