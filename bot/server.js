@@ -1,10 +1,12 @@
+const dotenv = require('dotenv');
+const path = require('path');
+
+// Load environment variables from the root directory
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const bot = require('./index');
-const dotenv = require('dotenv');
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,7 +45,8 @@ app.post('/api/send-qr', async (req, res) => {
         const { telegram_id } = req.body;
         if (!telegram_id) return res.status(400).json({ error: 'Missing telegram_id' });
 
-        const refLink = `https://t.me/emedeoesimworld_bot?start=${telegram_id}`;
+        const botUsername = process.env.BOT_USERNAME || 'emedeoworld_bot';
+        const refLink = `https://t.me/${botUsername}?start=${telegram_id}`;
 
         const caption = `🔗 Link: ${refLink}\n🎁 Promo: ${telegram_id}`;
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}`;

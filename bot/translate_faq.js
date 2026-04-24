@@ -3,8 +3,8 @@ const { getLocalizedText } = require('./src/openai');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Load env from the bot's .env file
-dotenv.config({ path: path.resolve(__dirname, './.env') });
+// Load env from the bot's parent directory
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;

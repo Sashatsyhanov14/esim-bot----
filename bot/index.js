@@ -1,11 +1,16 @@
-const { Telegraf, session, Markup } = require('telegraf');
-const axios = require('axios');
 const dotenv = require('dotenv');
 const path = require('path');
+
+// Load environment variables from the root directory
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+console.log('[DEBUG] BOT_TOKEN loaded:', process.env.BOT_TOKEN ? 'YES (starts with ' + process.env.BOT_TOKEN.substring(0, 5) + ')' : 'NO');
+console.log('[DEBUG] WEBAPP_URL loaded:', process.env.WEBAPP_URL || 'NOT SET (using default)');
+
+const { Telegraf, session, Markup } = require('telegraf');
+const axios = require('axios');
 const { supabase, getUser, createUser, updateUser, getTariffs, saveMessage, getHistory, createOrder, getFaq, clearHistory } = require('./src/supabase');
 const { getChatResponse, getLocalizedText } = require('./src/openai');
-
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const MANAGER_ID = parseInt(process.env.MANAGER_ID);
@@ -245,7 +250,7 @@ bot.start(async (ctx) => {
         await clearHistory(telegramId);
 
         if (startPayload === 'getqr') {
-            const botUsername = process.env.BOT_USERNAME || botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+            const botUsername = process.env.BOT_USERNAME || botInfo?.username || 'emedeoworld_bot';
             const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
             const text = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}&margin=10`;
@@ -330,7 +335,7 @@ bot.start(async (ctx) => {
 
 bot.command('ref', async (ctx) => {
     const telegramId = ctx.from.id;
-    const botUsername = process.env.BOT_USERNAME || botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+    const botUsername = process.env.BOT_USERNAME || botInfo?.username || 'emedeoworld_bot';
     const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
 
     const textRu = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
@@ -351,7 +356,7 @@ bot.on('message', async (ctx, next) => {
         if (data === '/ref') {
             const telegramId = ctx.from.id;
             const lang = userLangCache[telegramId] || ctx.from.language_code || 'en';
-            const botUsername = process.env.BOT_USERNAME || botInfo?.username || ctx.botInfo?.username || 'emedeoesimworld_bot';
+            const botUsername = process.env.BOT_USERNAME || botInfo?.username || 'emedeoworld_bot';
             const refLink = `https://t.me/${botUsername}?start=${telegramId}`;
 
             const textRu = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;

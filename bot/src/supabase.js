@@ -1,14 +1,19 @@
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
-
 const path = require('path');
+
+// Ensure env is loaded (in case this is required independently)
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase credentials in .env');
+  console.error('[CRITICAL] Missing Supabase credentials in .env!');
+  console.log('[DEBUG] Current __dirname:', __dirname);
+  console.log('[DEBUG] Resolved .env path:', path.resolve(__dirname, '../../.env'));
+} else {
+  console.log('[DEBUG] Supabase connected to:', supabaseUrl);
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
