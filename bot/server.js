@@ -73,6 +73,24 @@ app.post('/api/catalog-buy', async (req, res) => {
 
         const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_usd);
 
+        // Notify USER
+        try {
+            const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+            const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Оплатить онлайн:**\n${tariff.payment_link || 'Пожалуйста, дождитесь сообщения от менеджера для оплаты.'}\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
+            await bot.telegram.sendMessage(telegramId, userMsg, { parse_mode: 'Markdown' });
+            
+            if (tariff.payment_qr_url) {
+                let finalQrUrl = tariff.payment_qr_url;
+                if (finalQrUrl.includes('drive.google.com')) {
+                    const match = finalQrUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                    if (match && match[1]) finalQrUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                }
+                await bot.telegram.sendPhoto(telegramId, finalQrUrl, { caption: `QR-код для оплаты тарифа ${tariff.country}` });
+            }
+        } catch (e) {
+            console.error('Failed to notify user about order:', e.message);
+        }
+
         // Fetch managers to notify
         const { data: managers } = await supabase.from('users').select('telegram_id').in('role', ['founder', 'admin', 'manager']);
         if (managers && managers.length > 0) {
@@ -81,8 +99,8 @@ app.post('/api/catalog-buy', async (req, res) => {
             // Try fetch username
             let username = "User";
             try { 
-                const { data: bUser } = await supabase.from('users').select('username').eq('telegram_id', telegramId).single();
-                if (bUser && bUser.username) username = bUser.username;
+                const { data: bUser } = await supabase.from('users').select('username, custom_note').eq('telegram_id', telegramId).single();
+                username = bUser?.custom_note ? `${bUser.custom_note} (@${bUser.username || telegramId})` : `@${bUser?.username || telegramId}`;
             } catch (e) {}
 
             for (const manager of managers) {
@@ -95,6 +113,7 @@ app.post('/api/catalog-buy', async (req, res) => {
                     } catch (e) {}
 
                     const mlt = locTariff(tariff, mLang);
+                    const userLabel = username;
 
                     const alertTexts = {
                         ru: {

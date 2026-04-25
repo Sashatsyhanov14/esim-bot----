@@ -88,6 +88,10 @@ module.exports = {
       .select('*, country, data_gb, validity_period') // Selection * ensures we get all new columns like country_ru, etc.
       .eq('is_active', true)
       .order('sort_number', { ascending: true }); // Отвечаем в отсортированном порядке, если есть
+    
+    if (data) {
+        return { data: data.map(t => ({ ...t, country: t.country?.trim() || 'Unknown' })), error };
+    }
     return { data, error };
   },
 

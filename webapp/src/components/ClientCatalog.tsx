@@ -29,7 +29,11 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
     const fetchTariffs = async () => {
         setLoading(true);
         const { data } = await supabase.from('tariffs').select('*').eq('is_active', true).order('sort_number', { ascending: true });
-        if (data) setTariffs(data);
+        if (data) {
+            // Clean up names during fetch
+            const clean = data.map(t => ({ ...t, country: t.country?.trim() || 'Unknown' }));
+            setTariffs(clean);
+        }
         setLoading(false);
     };
 
@@ -50,18 +54,21 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 });
             }
 
+            tg.showAlert(`✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату или в чат с ботом. После оплаты мы вышлем вам данные eSIM.`);
+
             if (tData.payment_link) {
                 tg.openLink(tData.payment_link);
             } else {
                 const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
                 tg.openTelegramLink(`https://t.me/${botUsername}?start=buy_${tData.id}`);
             }
-            setTimeout(() => tg.close(), 500); 
+            setTimeout(() => tg.close(), 1000); 
         } catch (e) {
             console.error(e);
+            tg.showAlert('Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.');
             const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
             tg.openTelegramLink(`https://t.me/${botUsername}?start=buy_${tData.id}`);
-            tg.close();
+            setTimeout(() => tg.close(), 1000);
         } finally {
             setBuyLoading(null);
         }
@@ -78,7 +85,7 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
 
     // Group by country (hard-coded Russian-first)
     const grouped = tariffs.reduce((acc: Record<string, Tariff[]>, tariff) => {
-        const c = tariff.country;
+        const c = tariff.country?.trim() || 'Unknown';
         if (!acc[c]) acc[c] = [];
         acc[c].push(tariff);
         return acc;

@@ -33,8 +33,10 @@ const clientStates = new Map();
 const esc = (text) => (text || '').toString().replace(/[_*`[\]()]/g, '\\$&');
 
 // --- HELPER: Localization for Tariffs (Simplified: Country Only) ---
-const locTariff = (tariff) => {
-    return { country: tariff.country_ru || tariff.country, data_gb: tariff.data_gb, validity: tariff.validity_period };
+const locTariff = (tariff, lang) => {
+    const l = lang || 'ru';
+    const country = (l !== 'en' && tariff[`country_${l}`]) ? tariff[`country_${l}`] : tariff.country;
+    return { country, data_gb: tariff.data_gb, validity: tariff.validity_period };
 };
 
 // --- HELPER: Late Follow-up (2 min) ---
@@ -255,6 +257,32 @@ bot.start(async (ctx) => {
             const text = `🎁 Вот твоя пригласительная ссылка и QR-код:\n\n${refLink}\n\nТвой промокод (для ввода вручную): \`${telegramId}\``;
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(refLink)}&margin=10`;
             try { await ctx.replyWithPhoto(qrUrl, { caption: text, parse_mode: 'Markdown' }); } catch (e) { }
+        }
+
+        // --- NEW: Handle Buy Link from Mini App ---
+        if (startPayload && startPayload.startsWith('buy_')) {
+            const tariffId = startPayload.replace('buy_', '');
+            const { getTariffs, createOrder } = require('./src/supabase');
+            const { data: tariffs } = await getTariffs();
+            const tariff = (tariffs || []).find(t => t.id === tariffId);
+
+            if (tariff) {
+                await createOrder(telegramId, tariffId, tariff.price_usd);
+                const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+                const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Оплатить онлайн:**\n${tariff.payment_link || 'Пожалуйста, дождитесь сообщения от менеджера для оплаты.'}\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
+                await ctx.reply(userMsg, { parse_mode: 'Markdown' });
+                
+                if (tariff.payment_qr_url) {
+                    let finalQrUrl = tariff.payment_qr_url;
+                    if (finalQrUrl.includes('drive.google.com')) {
+                        const match = finalQrUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                        if (match && match[1]) finalQrUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                    }
+                    try { await ctx.replyWithPhoto(finalQrUrl, { caption: `QR-код для оплаты тарифа ${tariff.country}` }); } catch (e) {}
+                }
+                // Also notify managers about this order (optional, as /api/catalog-buy might have already been called, 
+                // but if redirected here, it's safer to ensure they know)
+            }
         }
 
         let { data: user } = await getUser(telegramId);

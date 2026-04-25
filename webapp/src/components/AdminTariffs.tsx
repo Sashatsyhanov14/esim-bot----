@@ -40,7 +40,9 @@ export default function AdminTariffs({ t }: { t: any }) {
     const fetchTariffs = async () => {
         setLoading(true);
         const { data } = await supabase.from('tariffs').select('*').order('sort_number', { ascending: true });
-        if (data) setTariffs(data);
+        if (data) {
+            setTariffs(data.map(t => ({ ...t, country: t.country?.trim() || 'Unknown' })));
+        }
         setLoading(false);
     };
 
@@ -64,7 +66,9 @@ export default function AdminTariffs({ t }: { t: any }) {
         const cleanData: any = {};
         validFields.forEach(field => {
             if (formData[field as keyof Tariff] !== undefined) {
-                cleanData[field] = formData[field as keyof Tariff];
+                let val = formData[field as keyof Tariff];
+                if (field === 'country' && typeof val === 'string') val = val.trim();
+                cleanData[field] = val;
             }
         });
 

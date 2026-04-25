@@ -151,7 +151,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
         let query = supabase.from('users').select('*');
         const input = newManagerId.trim();
         
-        if (/^\d+₽/.test(input)) {
+        if (/^\d+$/.test(input)) {
             query = query.eq('telegram_id', parseInt(input));
         } else {
             const username = input.startsWith('@') ? input.substring(1) : input;
@@ -194,13 +194,13 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
     };
 
     const handleMarkPaid = async (tgId: number, currentBalance: number) => {
-        if (!window.confirm(t.confirmPayout?.replace('{amount}', currentBalance.toFixed(2)) || `Payout ₽₽{currentBalance.toFixed(2)}?`)) return;
+        if (!window.confirm(t.confirmPayout?.replace('{amount}', currentBalance.toFixed(2)) || `Payout ₽${currentBalance.toFixed(2)}?`)) return;
         
         const { error: insErr } = await supabase.from('chat_history').insert({
             id: window.crypto.randomUUID(),
             user_id: tgId,
             role: 'assistant',
-            content: `PAYOUT_RECORD:₽{currentBalance.toFixed(2)}`,
+            content: `PAYOUT_RECORD:${currentBalance.toFixed(2)}`,
             created_at: new Date().toISOString()
         });
 
@@ -289,13 +289,13 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                             <div className="flex gap-2 flex-1">
                                 <button 
                                     onClick={() => setNewManagerRole('manager')}
-                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold uppercase transition-all ₽{newManagerRole === 'manager' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'bg-surface-container-high text-on-surface-variant'}`}
+                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold uppercase transition-all ${newManagerRole === 'manager' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'bg-surface-container-high text-on-surface-variant'}`}
                                 >
                                     {t.selectManager}
                                 </button>
                                 <button 
                                     onClick={() => setNewManagerRole('admin')}
-                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold uppercase transition-all ₽{newManagerRole === 'admin' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-white/5 text-on-surface-variant'}`}
+                                    className={`flex-1 py-1 rounded-md text-[10px] font-bold uppercase transition-all ${newManagerRole === 'admin' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-white/5 text-on-surface-variant'}`}
                                 >
                                     {t.selectAdmin}
                                 </button>
@@ -322,14 +322,14 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                                                 <div className="flex bg-surface-container-high p-0.5 rounded border border-outline-variant/10">
                                                     <button 
                                                         onClick={() => handleUpdateRole(m.telegram_id, 'manager')}
-                                                        className={`px-1.5 py-0.5 rounded-sm text-[8px] font-bold uppercase transition-all ₽{m.role === 'manager' ? 'bg-tertiary/20 text-tertiary' : 'text-on-surface-variant hover:text-on-surface'}`}
+                                                        className={`px-1.5 py-0.5 rounded-sm text-[8px] font-bold uppercase transition-all ${m.role === 'manager' ? 'bg-tertiary/20 text-tertiary' : 'text-on-surface-variant hover:text-on-surface'}`}
                                                         title="Понизить до Менеджера"
                                                     >
                                                         M
                                                     </button>
                                                     <button 
                                                         onClick={() => handleUpdateRole(m.telegram_id, 'admin')}
-                                                        className={`px-1.5 py-0.5 rounded-sm text-[8px] font-bold uppercase transition-all ₽{m.role === 'admin' ? 'bg-secondary/20 text-secondary' : 'text-on-surface-variant hover:text-on-surface'}`}
+                                                        className={`px-1.5 py-0.5 rounded-sm text-[8px] font-bold uppercase transition-all ${m.role === 'admin' ? 'bg-secondary/20 text-secondary' : 'text-on-surface-variant hover:text-on-surface'}`}
                                                         title="Повысить до Админа"
                                                     >
                                                         A
@@ -421,8 +421,8 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
             </section>
 
             <div className="flex gap-2 p-1 bg-surface-container-lowest rounded-xl">
-                <button onClick={() => setActiveTab('orders')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold ₽{activeTab === 'orders' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant'}`}>{t.tabOrders}</button>
-                <button onClick={() => setActiveTab('users')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold ₽{activeTab === 'users' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant'}`}>{t.tabUsers}</button>
+                <button onClick={() => setActiveTab('orders')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold ${activeTab === 'orders' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant'}`}>{t.tabOrders}</button>
+                <button onClick={() => setActiveTab('users')} className={`flex-1 py-1.5 rounded-lg text-sm font-bold ${activeTab === 'users' ? 'bg-primary/20 text-primary' : 'text-on-surface-variant'}`}>{t.tabUsers}</button>
             </div>
 
             {loading ? (
@@ -434,7 +434,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                             <button
                                 key={st}
                                 onClick={() => setStatusFilter(st)}
-                                className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold whitespace-nowrap ₽{statusFilter === st ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'bg-surface-container-low text-on-surface-variant'}`}
+                                className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold whitespace-nowrap ${statusFilter === st ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'bg-surface-container-low text-on-surface-variant'}`}
                             >
                                 {t.statuses ? (t.statuses[st] || st.toUpperCase().replace('_', ' ')) : st.toUpperCase().replace('_', ' ')}
                             </button>
@@ -475,7 +475,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                                     </div>
 
                                     <div className="flex justify-between items-center mt-3 pt-2 border-t border-outline-variant/10">
-                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ₽{o.status === 'paid' ? 'bg-green-500/20 text-green-400' : o.status === 'pending' ? 'bg-orange-500/20 text-orange-400' : o.status === 'awaiting_qr' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>
+                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${o.status === 'paid' ? 'bg-green-500/20 text-green-400' : o.status === 'pending' ? 'bg-orange-500/20 text-orange-400' : o.status === 'awaiting_qr' ? 'bg-blue-500/20 text-blue-400' : 'bg-red-500/20 text-red-400'}`}>
                                             {t.statuses ? (t.statuses[o.status] || o.status) : o.status}
                                         </span>
                                         {o.assigned_manager && <span className="text-[10px] text-on-surface-variant">Manager ID: {o.assigned_manager}</span>}
@@ -501,7 +501,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                             <div className="flex items-center justify-between">
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2">
-                                        <p className="font-headline font-semibold text-on-surface text-sm">{u.username ? `@₽{u.username}` : u.telegram_id}</p>
+                                        <p className="font-headline font-semibold text-on-surface text-sm">{u.username ? `@${u.username}` : u.telegram_id}</p>
                                         {u.custom_note && (
                                             <span className="text-[10px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold">
                                                 {u.custom_note}
@@ -647,10 +647,10 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                                     </div>
                                 </div>
                                 <div className="text-xs text-on-surface-variant space-y-0.5">
-                                    <div>{o.tariffs ? `₽{o.tariffs.country} | ₽{o.tariffs.data_gb} | ₽{o.tariffs.validity_period}` : '—'}</div>
+                                    <div>{o.tariffs ? `${o.tariffs.country} | ${o.tariffs.data_gb} | ${o.tariffs.validity_period}` : '—'}</div>
                                     <div className="flex justify-between items-center">
                                         <span>{new Date(o.created_at).toLocaleString()}</span>
-                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ₽{
+                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
                                             o.status === 'paid' ? 'bg-green-500/20 text-green-400' :
                                             o.status === 'pending' ? 'bg-orange-500/20 text-orange-400' :
                                             'bg-red-500/20 text-red-400'
