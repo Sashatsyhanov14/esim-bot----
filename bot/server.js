@@ -75,11 +75,11 @@ app.post('/api/catalog-buy', async (req, res) => {
 
         if (!tariff) return res.status(404).json({ error: 'Tariff not found' });
 
-        const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_usd);
+        const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_rub);
 
         // Notify USER
         try {
-            const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+            const userPriceText = `₽${tariff.price_rub}`;
             const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на кнопку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
             
             await bot.telegram.sendMessage(telegramId, userMsg, { 
@@ -140,17 +140,17 @@ app.post('/api/catalog-buy', async (req, res) => {
 
                     const alertTexts = {
                         ru: {
-                            text: `👤 **Юзер:** ${userLabel} (ID: ${telegramId})\n🚀 **ЗАКАЗ (WebApp)!**\n\nТариф: ${mlt.country} | ${mlt.data_gb} на ${mlt.validity}\nЦена: $${tariff.price_usd}\n\n⚠️ ВАЖНО: Подтвердите оплату перед тем как скидывать eSIM-код!`,
+                            text: `👤 **Юзер:** ${userLabel} (ID: ${telegramId})\n🚀 **ЗАКАЗ (WebApp)!**\n\nТариф: ${mlt.country} | ${mlt.data_gb} на ${mlt.validity}\nЦена: **₽${tariff.price_rub}**\n\n⚠️ ВАЖНО: Подтвердите оплату перед тем как скидывать eSIM-код!`,
                             sendBtn: '📤 Отправить eSIM',
                             contactBtn: '✉️ Написать клиенту'
                         },
                         tr: {
-                            text: `👤 **Kullanıcı:** ${userLabel} (ID: ${telegramId})\n🚀 **SİPARİŞ (WebApp)!**\n\nTarife: ${mlt.country} | ${mlt.data_gb} - ${mlt.validity}\nFiyat: $${tariff.price_usd}\n\n⚠️ ÖNEMLİ: Link или QR'ı göndermeden önce öдеmeyi onaylayın!`,
+                            text: `👤 **Kullanıcı:** ${userLabel} (ID: ${telegramId})\n🚀 **SİPARİŞ (WebApp)!**\n\nTarife: ${mlt.country} | ${mlt.data_gb} - ${mlt.validity}\nFiyat: **₽${tariff.price_rub}**\n\n⚠️ ÖNEMLİ: Link или QR'ı göndermeden önce öдеmeyi onaylayın!`,
                             sendBtn: '📤 eSIM Gönder',
                             contactBtn: '✉️ Müşтерiye Yaz'
                         },
                         en: {
-                            text: `👤 **User:** ${userLabel} (ID: ${telegramId})\n🚀 **ORDER (WebApp)!**\n\nPlan: ${mlt.country} | ${mlt.data_gb} for ${mlt.validity}\nPrice: $${tariff.price_usd}\n\n⚠️ IMPORTANT: Verify payment before sending the Link/Code!`,
+                            text: `👤 **User:** ${userLabel} (ID: ${telegramId})\n🚀 **ORDER (WebApp)!**\n\nPlan: ${mlt.country} | ${mlt.data_gb} for ${mlt.validity}\nPrice: **₽${tariff.price_rub}**\n\n⚠️ IMPORTANT: Verify payment before sending the Link/Code!`,
                             sendBtn: '📤 Send eSIM',
                             contactBtn: '✉️ Write to Client'
                         }
@@ -200,7 +200,7 @@ app.post('/api/withdraw-request', async (req, res) => {
         const { data: user } = await supabase.from('users').select('username, custom_note').eq('telegram_id', telegram_id).single();
         const userLabel = user?.custom_note ? `${user.custom_note} (@${user.username || telegram_id})` : `@${user?.username || telegram_id}`;
 
-        const msg = `👤 **Клиент:** ${userLabel} (ID: ${telegram_id})\n🚀 **ЗАПРОС БОНУСОВ!**\n\n💰 Сумма: **$${amount}**\n💳 Способ: ${method}\n\n⚠️ Проверьте баланс пользователя в админке перед выплатой!`;
+        const msg = `👤 **Клиент:** ${userLabel} (ID: ${telegram_id})\n🚀 **ЗАПРОС БОНУСОВ!**\n\n💰 Сумма: **₽${amount}**\n💳 Способ: ${method}\n\n⚠️ Проверьте баланс пользователя в админке перед выплатой!`;
 
         const { data: managers } = await supabase.from('users').select('telegram_id').in('role', ['founder', 'manager']);
         if (managers && bot) {

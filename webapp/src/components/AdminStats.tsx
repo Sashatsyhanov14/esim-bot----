@@ -68,7 +68,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
         let { data: ordersData } = await supabase
             .from('orders')
             .select(`
-        id, created_at, status, price_usd, assigned_manager,
+        id, created_at, status, price_rub, assigned_manager,
         users:user_id (telegram_id, username),
         tariffs:tariff_id (country, data_gb, validity_period)
       `)
@@ -104,12 +104,12 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                 const uId = rawId ? String(rawId) : null;
                 if (uId && uMap[uId]) {
                     uMap[uId].ordersCount++;
-                    uMap[uId].totalSpend += (Number(o.price_usd) * 100 || Number(o.price_rub) || 0);
+                    uMap[uId].totalSpend += Number(o.price_rub || 0);
 
                     const refId = String(uMap[uId].referrer_id);
                     if (uMap[uId].referrer_id && uMap[refId]) {
-                        uMap[refId].refTotalVolume += (Number(o.price_usd) * 100 || Number(o.price_rub) || 0);
-                        uMap[refId].earnedBonuses += (Number(o.price_usd) * 100 * 0.20 || Number(o.price_rub) * 0.20 || 0);
+                        uMap[refId].refTotalVolume += Number(o.price_rub || 0);
+                        uMap[refId].earnedBonuses += Number(o.price_rub || 0) * 0.20;
                     }
                 }
             });
@@ -246,7 +246,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
         setRefOrdersLoading(true);
         const { data } = await supabase
             .from('orders')
-            .select(`id, created_at, status, price_usd, users:user_id (telegram_id, username), tariffs:tariff_id (country, data_gb, validity_period)`)
+            .select(`id, created_at, status, price_rub, users:user_id (telegram_id, username), tariffs:tariff_id (country, data_gb, validity_period)`)
             .in('user_id', user.invitedUserIds)
             .order('created_at', { ascending: false });
         setRefOrders(data || []);
@@ -459,7 +459,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                                         <div className="font-bold text-on-surface flex items-center gap-2">
                                             {uObj?.username ? `@${uObj.username}` : uObj?.telegram_id || t.unknownUser}
                                         </div>
-                                        <b className="text-green-400">₽{o.price_rub || Math.round(o.price_usd * 100)}</b>
+                                        <b className="text-green-400">₽{o.price_rub}</b>
                                     </div>
 
                                     <div className="text-on-surface-variant text-xs space-y-1.5 mb-2">
@@ -648,8 +648,8 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
                                 <div className="flex justify-between items-start mb-1">
                                     <span className="font-bold text-on-surface">{uObj?.username ? `@${uObj.username}` : uObj?.telegram_id || '?'}</span>
                                     <div className="text-right">
-                                        <b className="text-green-400">₽{o.price_rub || Math.round(o.price_usd * 100)}</b>
-                                        <p className="text-[10px] text-yellow-400 font-bold">+₽{Math.round((o.price_rub || o.price_usd * 100) * 0.20)} {t.commissionLabel || 'комиссия'}</p>
+                                        <b className="text-green-400">₽{o.price_rub}</b>
+                                        <p className="text-[10px] text-yellow-400 font-bold">+₽{Math.round((o.price_rub || 0) * 0.20)} {t.commissionLabel || 'комиссия'}</p>
                                     </div>
                                 </div>
                                 <div className="text-xs text-on-surface-variant space-y-0.5">

@@ -7,8 +7,7 @@ interface Tariff {
     country: string;
     data_gb: string;
     validity_period: string;
-    price_usd: number;
-    price_rub?: number;
+    price_rub: number;
     is_active: boolean;
     payment_link?: string;
 }
@@ -181,8 +180,8 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                             
                             <div className="flex justify-between items-start mb-4">
                                 <h3 className="font-headline font-bold text-slate-100 text-lg">{tData.country}</h3>
-                                <span className={tData.price_rub ? "text-2xl font-extrabold text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.3)]" : "text-2xl font-extrabold text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.3)]"}>
-                                    ₽{tData.price_rub || Math.round(tData.price_usd * 100)}
+                                <span className="text-2xl font-extrabold text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.3)]">
+                                    ₽{tData.price_rub}
                                 </span>
                             </div>
 

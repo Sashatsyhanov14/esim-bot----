@@ -11,7 +11,7 @@ const ANALYZER_PROMPT = (tariffs) => `
 Ты — ведущий системный аналитик магазина eSIM. Твоя задача — анализировать историю чата и запрос пользователя, а затем выдавать инструкции JSON.
 
 Тарифы в базе (ТОЛЬКО ЭТИ):
-${tariffs.map(t => `- ${t.country} | ${t.data_gb} | ${t.validity_period} | ₽${t.price_rub || (Math.round(t.price_usd * 100))} (ID: ${t.id})`).join('\n')}
+${tariffs.map(t => `- ${t.country} | ${t.data_gb} | ${t.validity_period} | ₽${t.price_rub} (ID: ${t.id})`).join('\n')}
 
 Логика:
 1. ТЕХНИЧЕСКИЕ ВОПРОСЫ (установка, совместимость *#06#) -> intent: "consultation".
@@ -36,7 +36,7 @@ const WRITER_PROMPT = (tariffs, faqText = '') => `
 2. ТАРИФЫ: Используй список ниже. Формат: "1. 📶 [Трафик] ⏳ [Срок] — 💵 ₽[Цена в рублях]".
    Всегда добавляй: "Напишите номер нужного тарифа 👇".
 
-${tariffs.map(t => `- ${t.country} | ${t.data_gb} | ${t.validity_period} | ₽${t.price_rub || (Math.round(t.price_usd * 100))}`).join('\n')}
+${tariffs.map(t => `- ${t.country} | ${t.data_gb} | ${t.validity_period} | ₽${t.price_rub}`).join('\n')}
 
 3. ВЫБОР ТАРИФА (intent=sale): Подтверди выбор и скажи, что сейчас пришлешь ссылку и QR-код для оплаты. Инструктируй клиента ввести сумму вручную и ОБЯЗАТЕЛЬНО отправить скриншот квитанции/чека прямо сюда в чат сразу после оплаты.
    Всегда добавляй эту ссылку в конце: "🔗 [Оплатить через СБП](https://qr.nspk.ru/BS1A007LE9E0FDI98URAK4C3RIU73M5P?type=01&bank=100000000008&crc=1A81) (откроется в приложении банка)"

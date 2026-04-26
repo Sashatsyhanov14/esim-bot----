@@ -7,8 +7,7 @@ interface Tariff {
     country: string;
     data_gb: string;
     validity_period: string;
-    price_usd: number;
-    price_rub?: number;
+    price_rub: number;
     payment_link?: string;
     payment_qr_url?: string;
     is_active: boolean;
@@ -59,7 +58,7 @@ export default function AdminTariffs({ t }: { t: any }) {
         }
 
         const validFields = [
-            'sort_number', 'country', 'data_gb', 'validity_period', 'price_usd', 'price_rub', 
+            'sort_number', 'country', 'data_gb', 'validity_period', 'price_rub', 
             'payment_link', 'payment_qr_url', 'is_active'
         ];
 
@@ -71,11 +70,6 @@ export default function AdminTariffs({ t }: { t: any }) {
                 cleanData[field] = val;
             }
         });
-
-        // Ensure price_usd is at least a fallback calculation if not set
-        if (!cleanData.price_usd && cleanData.price_rub) {
-            cleanData.price_usd = cleanData.price_rub / 100;
-        }
 
         if (editingId === 'new') {
             cleanData.created_at = new Date().toISOString();
@@ -238,7 +232,7 @@ export default function AdminTariffs({ t }: { t: any }) {
                                 <span className="font-headline font-bold text-on-surface text-lg tracking-wide">{tData.country}</span>
                             </div>
                             <span className="font-headline font-extrabold text-blue-400 text-xl absolute top-3 right-3">
-                                {tData.price_rub ? `₽${tData.price_rub}` : `$${tData.price_usd}`}
+                                ₽{tData.price_rub}
                             </span>
                         </div>
 

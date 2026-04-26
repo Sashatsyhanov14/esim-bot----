@@ -133,11 +133,11 @@ module.exports = {
     return { data, error };
   },
 
-  async createOrder(userId, tariffId, priceUsd) {
+  async createOrder(userId, tariffId, priceRub) {
     const orderId = crypto.randomUUID();
     const { data, error } = await supabase
       .from('orders')
-      .insert([{ id: orderId, user_id: userId, tariff_id: tariffId, price_usd: priceUsd, status: 'pending', created_at: new Date().toISOString() }])
+      .insert([{ id: orderId, user_id: userId, tariff_id: tariffId, price_rub: priceRub, status: 'pending', created_at: new Date().toISOString() }])
       .select()
       .single();
 

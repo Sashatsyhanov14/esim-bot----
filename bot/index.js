@@ -207,8 +207,8 @@ bot.on(['photo', 'document', 'text'], async (ctx, next) => {
             // --- REFERRAL PAYOUT: 20% of tariff price ---
             try {
                 const { data: buyer } = await supabase.from('users').select('referrer_id').eq('telegram_id', userId).single();
-                if (buyer?.referrer_id && (pendingOrder.price_usd || pendingOrder.price_rub)) {
-                    const priceRub = pendingOrder.price_rub || Math.round(pendingOrder.price_usd * 100);
+                if (buyer?.referrer_id && pendingOrder.price_rub) {
+                    const priceRub = pendingOrder.price_rub;
                     const reward = Math.round(priceRub * 0.20);
                     const { data: refUser } = await supabase.from('users').select('balance').eq('telegram_id', buyer.referrer_id).single();
                     const newBalance = (refUser?.balance || 0) + reward;
@@ -282,8 +282,8 @@ bot.start(async (ctx) => {
             const tariff = (tariffs || []).find(t => t.id === tariffId);
 
             if (tariff) {
-                await createOrder(telegramId, tariffId, tariff.price_usd);
-                const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+                await createOrder(telegramId, tariffId, tariff.price_rub);
+                const userPriceText = `₽${tariff.price_rub}`;
                 const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на кнопку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
                 
                 await ctx.reply(userMsg, { 
@@ -445,13 +445,13 @@ bot.on('message', async (ctx, next) => {
 
                 if (tariff) {
                     try {
-                        const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_usd);
+                        const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_rub);
                         
                         const uiLang = 'ru';
                         const lt = locTariff(tariff);
                         
-                        const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
-                        const managerPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+                        const userPriceText = `₽${tariff.price_rub}`;
+                        const managerPriceText = `₽${tariff.price_rub}`;
                         const successRu = `Выбранный тариф: ${lt.country} | ${lt.data_gb} на ${lt.validity} — ${userPriceText}`;
                         let finalResponse = successRu;
                         
@@ -495,7 +495,7 @@ bot.on('message', async (ctx, next) => {
                         const alertManagers = (allAdmins || []).filter(m => m.role === 'founder' || m.role === 'admin' || m.telegram_id === referrerId);
                         if (alertManagers.length > 0) {
                             // Calculate 15% commission as profit
-                            const profitRUB = Math.round((tariff.price_rub || tariff.price_usd * 100) * 0.15);
+                            const profitRUB = Math.round((tariff.price_rub || 0) * 0.15);
                             const profitText = `💰 Прибыль: ₽${profitRUB}`;
 
                             for (const manager of alertManagers) {
@@ -769,11 +769,11 @@ bot.on('text', async (ctx) => {
 
         if (tariff) {
             try {
-                const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_usd);
+                const { data: orderData } = await createOrder(telegramId, tariffId, tariff.price_rub);
 
             const uiLang = userLangCache[telegramId] || ctx.from.language_code || 'en';
             const ltAI = locTariff(tariff, uiLang);
-            const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
+            const userPriceText = `₽${tariff.price_rub}`;
 
             const payTextRu = `\n\nВыбранный тариф: ${ltAI.country} | ${ltAI.data_gb} на ${ltAI.validity}\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Оплатите и **пришлите скриншот квитанции сюда**.\n\n🔗 [Оплатить через СБП](${process.env.DEFAULT_PAYMENT_LINK || '#'}) (откроется в приложении банка)\n\n✅ *Сразу после подтверждения оплаты мы вышлем ваш eSIM-код!*`;
             const payText = await getLocalizedText(uiLang, payTextRu);
@@ -839,17 +839,17 @@ bot.on('text', async (ctx) => {
 
                         const managerTextsLocalizedAI = {
                             ru: {
-                                alert: `🚀 **ЗАКАЗ!**\n\nЮзер: ${userDisplay} (ID: ${telegramId})\nТариф: ${mltAI.country} | ${mltAI.data_gb} на ${mltAI.validity}\nЦена: $${tariff.price_usd}\n\n⚠️ ВАЖНО: Подтвердите оплату перед тем как скидывать eSIM-код!`,
+                                alert: `🚀 **ЗАКАЗ!**\n\nЮзер: ${userDisplay} (ID: ${telegramId})\nТариф: ${mltAI.country} | ${mltAI.data_gb} на ${mltAI.validity}\nЦена: **₽${tariff.price_rub}**\n\n⚠️ ВАЖНО: Подтвердите оплату перед тем как скидывать eSIM-код!`,
                                 sendBtn: '📤 Отправить eSIM (Код/Ссылка)',
                                 contactBtn: '✉️ Написать клиенту'
                             },
                             tr: {
-                                alert: `🚀 **SİPARİŞ!**\n\nKullanıcı: ${userDisplay} (ID: ${telegramId})\nTarife: ${mltAI.country} | ${mltAI.data_gb} - ${mltAI.validity}\nFiyat: $${tariff.price_usd}\n\n⚠️ ÖNEMLİ: Link veya QR'ı göndermeden önce ödemeyi onaylayın!`,
+                                alert: `🚀 **SİPARİŞ!**\n\nKullanıcı: ${userDisplay} (ID: ${telegramId})\nTarife: ${mltAI.country} | ${mltAI.data_gb} - ${mltAI.validity}\nFiyat: **₽${tariff.price_rub}**\n\n⚠️ ÖNEMLİ: Link veya QR'ı göndermeden önce ödemeyi onaylayın!`,
                                 sendBtn: '📤 eSIM Gönder',
                                 contactBtn: '✉️ Müşteriye Yaz'
                             },
                             en: {
-                                alert: `🚀 **ORDER!**\n\nUser: ${userDisplay} (ID: ${telegramId})\nPlan: ${mltAI.country} | ${mltAI.data_gb} for ${mltAI.validity}\nPrice: $${tariff.price_usd}\n\n⚠️ IMPORTANT: Verify payment before sending the Link/Code!`,
+                                alert: `🚀 **ORDER!**\n\nUser: ${userDisplay} (ID: ${telegramId})\nPlan: ${mltAI.country} | ${mltAI.data_gb} for ${mltAI.validity}\nPrice: **₽${tariff.price_rub}**\n\n⚠️ IMPORTANT: Verify payment before sending the Link/Code!`,
                                 sendBtn: '📤 Send eSIM (Code/Link)',
                                 contactBtn: '✉️ Write to Client'
                             }
