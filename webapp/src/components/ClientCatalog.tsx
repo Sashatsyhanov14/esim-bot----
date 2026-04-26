@@ -59,14 +59,15 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 tg.openLink(tData.payment_link);
             } else {
                 const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-                tg.openTelegramLink(`https://t.me/${botUsername}?start=buy_${tData.id}`);
+                tg.openTelegramLink(`https://t.me/${botUsername}`);
+                tg.close();
             }
             setTimeout(() => tg.close(), 1000); 
         } catch (e) {
             console.error(e);
             tg.showAlert('Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.');
             const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-            tg.openTelegramLink(`https://t.me/${botUsername}?start=buy_${tData.id}`);
+            tg.openTelegramLink(`https://t.me/${botUsername}`);
             setTimeout(() => tg.close(), 1000);
         } finally {
             setBuyLoading(null);

@@ -324,6 +324,7 @@ bot.start(async (ctx) => {
                 }
                 // Also notify managers about this order (optional, as /api/catalog-buy might have already been called, 
                 // but if redirected here, it's safer to ensure they know)
+                return; // <-- Exit early so welcome messages don't follow
             }
         }
 
