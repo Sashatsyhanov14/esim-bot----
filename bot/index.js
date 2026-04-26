@@ -284,8 +284,14 @@ bot.start(async (ctx) => {
             if (tariff) {
                 await createOrder(telegramId, tariffId, tariff.price_usd);
                 const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
-                const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n🔗 [Оплатить через СБП](${PAYMENT_LINK}) (откроется в приложении банка)\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
-                await ctx.reply(userMsg, { parse_mode: 'Markdown' });
+                const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на кнопку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
+                
+                await ctx.reply(userMsg, { 
+                    parse_mode: 'Markdown',
+                    ...Markup.inlineKeyboard([
+                        [Markup.button.url('🔗 Оплатить через СБП', PAYMENT_LINK)]
+                    ])
+                });
                 
                 // Use a default QR if tariff doesn't have one
                 let finalQrUrl = tariff.payment_qr_url || PAYMENT_QR_FILE;
