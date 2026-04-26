@@ -202,6 +202,12 @@ app.post('/api/withdraw-request', async (req, res) => {
                 } catch (e) { console.error(`Failed to notify manager ${manager.telegram_id}:`, e.message); }
             }
         }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Withdraw Request Error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 // API endpoint to manage user roles (Admin only)
 app.post('/api/manage-role', async (req, res) => {
