@@ -13,6 +13,11 @@ const { supabase, getUser, createUser, updateUser, getTariffs, saveMessage, getH
 const { getChatResponse, getLocalizedText } = require('./src/openai');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
+
+// --- HARDCODED SETTINGS ---
+const PAYMENT_LINK = 'https://qr.nspk.ru/BS1A007LE9E0FDI98URAK4C3RIU73M5P?type=01&bank=100000000008&crc=1A81';
+const PAYMENT_QR_FILE = 'payment_qr.jpg';
+
 const MANAGER_ID = parseInt(process.env.MANAGER_ID);
 
 const userLangCache = {};
@@ -279,11 +284,11 @@ bot.start(async (ctx) => {
             if (tariff) {
                 await createOrder(telegramId, tariffId, tariff.price_usd);
                 const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
-                const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n🔗 [Оплатить через СБП](${process.env.DEFAULT_PAYMENT_LINK || '#'}) (откроется в приложении банка)\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
+                const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n🔗 [Оплатить через СБП](${PAYMENT_LINK}) (откроется в приложении банка)\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
                 await ctx.reply(userMsg, { parse_mode: 'Markdown' });
                 
                 // Use a default QR if tariff doesn't have one
-                let finalQrUrl = tariff.payment_qr_url || process.env.DEFAULT_PAYMENT_QR;
+                let finalQrUrl = tariff.payment_qr_url || PAYMENT_QR_FILE;
                 if (finalQrUrl) {
                     try {
                         if (finalQrUrl.startsWith('http')) {
@@ -455,7 +460,7 @@ bot.on('message', async (ctx, next) => {
                             await ctx.reply(finalResponse);
                         }
                         
-                        let finalQrUrl = tariff.payment_qr_url || process.env.DEFAULT_PAYMENT_QR;
+                        let finalQrUrl = tariff.payment_qr_url || PAYMENT_QR_FILE;
                         if (finalQrUrl) {
                             try {
                                 if (finalQrUrl.startsWith('http')) {
@@ -779,7 +784,7 @@ bot.on('text', async (ctx) => {
             }
 
             // Restore AI Payment QR Automated Reply
-            let finalQrUrl = tariff.payment_qr_url || process.env.DEFAULT_PAYMENT_QR;
+            let finalQrUrl = tariff.payment_qr_url || PAYMENT_QR_FILE;
             if (finalQrUrl) {
                 try {
                     const ltAI_qr = locTariff(tariff, userLangCache[telegramId] || 'ru');

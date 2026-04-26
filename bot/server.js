@@ -11,6 +11,10 @@ const bot = require('./index');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- HARDCODED SETTINGS ---
+const PAYMENT_LINK = 'https://qr.nspk.ru/BS1A007LE9E0FDI98URAK4C3RIU73M5P?type=01&bank=100000000008&crc=1A81';
+const PAYMENT_QR_FILE = 'payment_qr.jpg';
+
 // --- HELPER: Escape Markdown ---
 const esc = (text) => (text || '').toString().replace(/[_*`[\]()]/g, '\\$&');
 
@@ -76,12 +80,11 @@ app.post('/api/catalog-buy', async (req, res) => {
         // Notify USER
         try {
             const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
-            const payLink = process.env.DEFAULT_PAYMENT_LINK || '#';
-            const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n🔗 [Оплатить через СБП](${payLink}) (откроется в приложении банка)\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
+            const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n🔗 [Оплатить через СБП](${PAYMENT_LINK}) (откроется в приложении банка)\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
             await bot.telegram.sendMessage(telegramId, userMsg, { parse_mode: 'Markdown' });
             
             // Send payment QR (local file or URL)
-            let finalQrUrl = tariff.payment_qr_url || process.env.DEFAULT_PAYMENT_QR;
+            let finalQrUrl = tariff.payment_qr_url || PAYMENT_QR_FILE;
             if (finalQrUrl) {
                 try {
                     if (finalQrUrl.startsWith('http')) {
