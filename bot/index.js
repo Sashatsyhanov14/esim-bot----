@@ -110,8 +110,15 @@ bot.on(['photo', 'document', 'text'], async (ctx, next) => {
         return next();
     }
 
-    // 1. Check in-memory state first (Strict Assignment)
-    const activeState = managerStates.get(senderId);
+    // 1. Check in-memory state first, fallback to DB
+    let activeState = managerStates.get(senderId);
+    if (!activeState || !activeState.orderId) {
+        if (sender?.waiting_order_id) {
+            activeState = { orderId: sender.waiting_order_id };
+            managerStates.set(senderId, activeState);
+        }
+    }
+
     if (!activeState || !activeState.orderId) {
         // --- NEW: Admin-to-User Direct Messaging via ID ---
         if (ctx.message.text && /^\d{6,15}\s+/.test(ctx.message.text.trim())) {
@@ -908,8 +915,11 @@ bot.action(/^sendqr_(.+)$/, async (ctx) => {
         return ctx.answerCbQuery('❌ У вас нет прав для подтверждения.', { show_alert: true });
     }
 
-    const { data: order } = await supabase.from('orders').select('*').eq('id', orderId).single();
-    if (!order) return ctx.answerCbQuery('❌ Заказ не найден.', { show_alert: true });
+    const { data: order, error: fetchErr } = await supabase.from('orders').select('*').eq('id', orderId).single();
+    if (fetchErr || !order) {
+        console.error('Fetch order error:', fetchErr?.message || 'Order not found');
+        return ctx.answerCbQuery('❌ Заказ не найден в базе.', { show_alert: true });
+    }
 
     if (order.status === 'paid') {
         return ctx.answerCbQuery('❌ Заказ уже был оплачен и отправлен!', { show_alert: true });
@@ -931,10 +941,18 @@ bot.action(/^sendqr_(.+)$/, async (ctx) => {
         .eq('status', 'pending')
         .select();
 
-    if (updateErr || !updated || updated.length === 0) {
-        // Double check if we already own it
-        if (order.assigned_manager !== telegramId) {
-            return ctx.answerCbQuery('❌ Заказ недоступен для взятия в работу.', { show_alert: true });
+    if (updateErr) {
+        console.error('Update order error:', updateErr.message);
+        return ctx.answerCbQuery(`❌ Ошибка БД: ${updateErr.message}`, { show_alert: true });
+    }
+
+    if (!updated || updated.length === 0) {
+        // Double check if we already own it (maybe clicked twice)
+        const { data: currentOrder } = await supabase.from('orders').select('assigned_manager, status').eq('id', orderId).single();
+        if (currentOrder?.assigned_manager === telegramId) {
+            // Already assigned to us, just proceed
+        } else {
+            return ctx.answerCbQuery(`❌ Не удалось закрепить заказ. Статус: ${currentOrder?.status || 'unknown'}`, { show_alert: true });
         }
     }
 
