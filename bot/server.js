@@ -200,14 +200,48 @@ app.post('/api/withdraw-request', async (req, res) => {
             }
         }
 
-        res.json({ success: true });
+// API endpoint to manage user roles (Admin only)
+app.post('/api/manage-role', async (req, res) => {
+    try {
+        const { adminId, targetId, targetUsername, newRole } = req.body;
+        if (!adminId || (!targetId && !targetUsername) || !newRole) {
+            return res.status(400).json({ error: 'Missing parameters' });
+        }
+
+        const { supabase } = require('./src/supabase');
+
+        // 1. Verify that requester is an admin/founder
+        const { data: adminUser } = await supabase.from('users').select('role').eq('telegram_id', adminId).single();
+        if (!adminUser || !['founder', 'admin'].includes(adminUser.role)) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        // 2. Find target user
+        let query = supabase.from('users').select('*');
+        if (targetId) {
+            query = query.eq('telegram_id', targetId);
+        } else {
+            const cleanUsername = targetUsername.startsWith('@') ? targetUsername.substring(1) : targetUsername;
+            query = query.eq('username', cleanUsername);
+        }
+
+        const { data: targetUser } = await query.single();
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // 3. Update role
+        const { error: upErr } = await supabase.from('users').update({ role: newRole }).eq('telegram_id', targetUser.telegram_id);
+        if (upErr) throw upErr;
+
+        res.json({ success: true, user: targetUser });
     } catch (err) {
-        console.error('Withdraw Request Error:', err);
-        res.status(500).json({ error: 'Internal Server Error' });
+        console.error('Manage Role Error:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// API endpoint to validate Telegram WebApp Init Data
+// Start the server
 app.post('/api/validate-auth', async (req, res) => {
     try {
         const { initData } = req.body;

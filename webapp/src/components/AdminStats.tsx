@@ -149,33 +149,36 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
         if (!newManagerId || !isAdmin) return;
         
         const input = newManagerId.trim();
-        let existingUser = null;
-        
-        if (/^\d+$/.test(input)) {
-            // Use text filter to avoid JS integer precision issues with BIGINT
-            const { data, error } = await supabase.from('users').select('*').filter('telegram_id', 'eq', input).single();
-            if (error) console.error('Manager lookup error:', error.message);
-            existingUser = data;
-        } else {
-            const username = input.startsWith('@') ? input.substring(1) : input;
-            const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
-            if (error) console.error('Manager lookup error:', error.message);
-            existingUser = data;
-        }
-        
-        if (!existingUser) {
-            tg?.showAlert(t.managerAddError || 'Пользователь не найден.');
-            return;
-        }
+        const isId = /^\d+$/.test(input);
 
-        const { error: upErr } = await supabase.from('users').update({ role: newManagerRole }).eq('telegram_id', existingUser.telegram_id);
-        
-        if (upErr) {
-            tg?.showAlert(t.managerAddFail || 'Ошибка обновления: ' + upErr.message);
-        } else {
-            tg?.showAlert(t.successTitle || "Успешно!");
-            fetchManagers();
-            setNewManagerId('');
+        try {
+            const response = await fetch('/api/manage-role', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    adminId: user.telegram_id,
+                    targetId: isId ? input : null,
+                    targetUsername: isId ? null : input,
+                    newRole: newManagerRole
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                tg?.showAlert(t.successTitle || "Успешно!");
+                fetchManagers();
+                setNewManagerId('');
+            } else {
+                if (response.status === 404) {
+                    tg?.showAlert(t.managerAddError || 'Пользователь не найден.');
+                } else {
+                    tg?.showAlert(result.error || 'Ошибка при добавлении.');
+                }
+            }
+        } catch (err: any) {
+            console.error('Add Manager Error:', err);
+            tg?.showAlert('Ошибка сети: ' + err.message);
         }
     };
 
