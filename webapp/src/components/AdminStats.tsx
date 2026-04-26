@@ -148,17 +148,20 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
     const handleAddManager = async () => {
         if (!newManagerId || !isAdmin) return;
         
-        let query = supabase.from('users').select('*');
         const input = newManagerId.trim();
+        let existingUser = null;
         
         if (/^\d+$/.test(input)) {
-            query = query.eq('telegram_id', parseInt(input));
+            // Use text filter to avoid JS integer precision issues with BIGINT
+            const { data, error } = await supabase.from('users').select('*').filter('telegram_id', 'eq', input).single();
+            if (error) console.error('Manager lookup error:', error.message);
+            existingUser = data;
         } else {
             const username = input.startsWith('@') ? input.substring(1) : input;
-            query = query.eq('username', username);
+            const { data, error } = await supabase.from('users').select('*').eq('username', username).single();
+            if (error) console.error('Manager lookup error:', error.message);
+            existingUser = data;
         }
-
-        const { data: existingUser } = await query.single();
         
         if (!existingUser) {
             tg?.showAlert(t.managerAddError || 'Пользователь не найден.');

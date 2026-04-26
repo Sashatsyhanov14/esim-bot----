@@ -183,6 +183,15 @@ const App: React.FC = () => {
 
       if (tgUser?.id) {
         await fetchUserData(tgUser.id, tgUser.first_name, tgUser.username);
+        
+        // Check for tab parameter in URL
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get('tab');
+        if (tab === 'catalog') setActiveTab('catalog');
+        else if (tab === 'referral') setActiveTab('referral');
+        else if (tab === 'stats') setActiveTab('stats');
+        else if (tab === 'tariffs') setActiveTab('tariffs');
+        else if (tab === 'faq') setActiveTab('faq');
       } else {
         setLoading(false);
       }

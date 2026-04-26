@@ -76,16 +76,28 @@ app.post('/api/catalog-buy', async (req, res) => {
         // Notify USER
         try {
             const userPriceText = `₽${tariff.price_rub || Math.round(tariff.price_usd * 100)}`;
-            const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Оплатить онлайн:**\n${tariff.payment_link || 'Пожалуйста, дождитесь сообщения от менеджера для оплаты.'}\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
+            const payLink = process.env.DEFAULT_PAYMENT_LINK || '#';
+            const userMsg = `✅ **Заказ принят!**\n\nВы выбрали: ${tariff.country} | ${tariff.data_gb} на ${tariff.validity_period}\nК оплате: **${userPriceText}**\n\n👇 **Для оплаты:**\n1. Нажмите на ссылку ниже или отсканируйте QR-код\n2. Введите сумму **${userPriceText}** вручную\n3. Совершите перевод и **обязательно пришлите скриншот квитанции сюда в чат**.\n\n🔗 [Оплатить через СБП](${payLink}) (откроется в приложении банка)\n\n*Сразу после подтверждения оплаты мы вышлем ваш eSIM-код прямо сюда!* 🚀`;
             await bot.telegram.sendMessage(telegramId, userMsg, { parse_mode: 'Markdown' });
             
-            if (tariff.payment_qr_url) {
-                let finalQrUrl = tariff.payment_qr_url;
-                if (finalQrUrl.includes('drive.google.com')) {
-                    const match = finalQrUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-                    if (match && match[1]) finalQrUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
-                }
-                await bot.telegram.sendPhoto(telegramId, finalQrUrl, { caption: `QR-код для оплаты тарифа ${tariff.country}` });
+            // Send payment QR (local file or URL)
+            let finalQrUrl = tariff.payment_qr_url || process.env.DEFAULT_PAYMENT_QR;
+            if (finalQrUrl) {
+                try {
+                    if (finalQrUrl.startsWith('http')) {
+                        if (finalQrUrl.includes('drive.google.com')) {
+                            const match = finalQrUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                            if (match && match[1]) finalQrUrl = `https://drive.google.com/uc?export=view&id=${match[1]}`;
+                        }
+                        await bot.telegram.sendPhoto(telegramId, finalQrUrl, { caption: `QR-код для оплаты тарифа ${tariff.country}. После оплаты пришлите чек!` });
+                    } else {
+                        const fs = require('fs');
+                        const filePath = path.isAbsolute(finalQrUrl) ? finalQrUrl : path.resolve(__dirname, finalQrUrl);
+                        if (fs.existsSync(filePath)) {
+                            await bot.telegram.sendPhoto(telegramId, { source: filePath }, { caption: `QR-код для оплаты тарифа ${tariff.country}. После оплаты пришлите чек!` });
+                        }
+                    }
+                } catch (qrErr) { console.error('Error sending QR:', qrErr.message); }
             }
         } catch (e) {
             console.error('Failed to notify user about order:', e.message);
