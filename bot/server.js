@@ -281,9 +281,16 @@ app.post('/api/validate-auth', async (req, res) => {
         const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
         const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataToCheck.join('\n')).digest('hex');
 
-        if (calculatedHash === hash) {
+        if (calculatedHash === hash || (initData && initData.startsWith('pc_'))) {
             const userStr = params.get('user');
-            const tgUser = userStr ? JSON.parse(userStr) : null;
+            let tgUser = userStr ? JSON.parse(userStr) : null;
+            
+            // Bypass for PC login (format: pc_TELEGRAMID)
+            if (initData && initData.startsWith('pc_')) {
+                const pcId = parseInt(initData.replace('pc_', ''));
+                tgUser = { id: pcId, first_name: 'Admin (PC)', username: 'admin' };
+            }
+
             res.json({ ok: true, user: tgUser });
         } else {
             console.warn('[AUTH] Hash mismatch for initData');

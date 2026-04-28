@@ -1060,10 +1060,8 @@ bot.action(/^cancel_(.+)$/, async (ctx) => {
     await ctx.answerCbQuery('❌ Заказ отменен.');
 });
 
-// Если мы НЕ на Vercel (например, запускаем локально или на VPS)
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    bot.launch().then(() => console.log('Bot is running locally (Long Polling)...'));
-}
+// Бот теперь запускается только в server.js, чтобы избежать конфликта (409 Conflict)
+
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
