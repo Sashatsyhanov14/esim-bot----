@@ -20,7 +20,20 @@ export default function ClientFaq() {
     const fetchFaqs = async () => {
         setLoading(true);
         const { data } = await supabase.from('faq').select('*').order('created_at', { ascending: true });
-        if (data) setFaqs(data);
+        if (data) {
+            // Sort: items containing "Россия", "России", "РФ" or "Russia" in topic or content come first
+            const sorted = [...data].sort((a, b) => {
+                const searchStr = (faq: Faq) => (faq.topic + ' ' + faq.content_ru).toLowerCase();
+                const keywords = ['росси', 'рф', 'russia'];
+                const isARussia = keywords.some(k => searchStr(a).includes(k));
+                const isBRussia = keywords.some(k => searchStr(b).includes(k));
+                
+                if (isARussia && !isBRussia) return -1;
+                if (!isARussia && isBRussia) return 1;
+                return 0;
+            });
+            setFaqs(sorted);
+        }
         setLoading(false);
     };
 

@@ -26,7 +26,20 @@ export default function AdminFaq({ t }: { t: any }) {
             console.error('[FETCH FAQ ERROR]', error);
             alert('Ошибка загрузки FAQ: ' + error.message);
         }
-        if (data) setFaqs(data);
+        if (data) {
+            // Sort: items containing "Россия", "России", "РФ" or "Russia" in topic or content come first
+            const sorted = [...data].sort((a, b) => {
+                const searchStr = (faq: Faq) => (faq.topic + ' ' + faq.content_ru).toLowerCase();
+                const keywords = ['росси', 'рф', 'russia'];
+                const isARussia = keywords.some(k => searchStr(a).includes(k));
+                const isBRussia = keywords.some(k => searchStr(b).includes(k));
+                
+                if (isARussia && !isBRussia) return -1;
+                if (!isARussia && isBRussia) return 1;
+                return 0;
+            });
+            setFaqs(sorted);
+        }
         setLoading(false);
     };
 
