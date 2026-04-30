@@ -159,9 +159,13 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-[40px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
                     
                     <h3 className="text-xl font-headline font-bold text-slate-100 mb-2">Оплата по QR</h3>
-                    <p className="text-sm text-on-surface-variant mb-6">
-                        Отсканируйте код или сохраните его для оплаты. К оплате: <b>₽{paymentQrModal.price_rub}</b>
+                    <p className="text-sm text-on-surface-variant mb-4">
+                        Отсканируйте код. <b>Внимание:</b> при оплате вам нужно будет самостоятельно ввести точную сумму перевода.
                     </p>
+                    <div className="bg-primary/20 border border-primary/30 p-3 rounded-xl w-full mb-6">
+                        <span className="text-xs uppercase tracking-widest text-primary font-bold">Сумма к оплате</span>
+                        <div className="text-3xl font-extrabold text-white">₽{paymentQrModal.price_rub}</div>
+                    </div>
 
                     <div className="bg-white p-4 rounded-3xl w-fit mx-auto shadow-[0_10px_40px_rgba(0,0,0,0.3)] mb-6">
                         <img
