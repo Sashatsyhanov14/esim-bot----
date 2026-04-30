@@ -10,6 +10,7 @@ interface Tariff {
     price_rub: number;
     is_active: boolean;
     payment_link?: string;
+    payment_qr_url?: string;
 }
 
 export default function ClientCatalog({ telegramId }: { telegramId?: string | null }) {
@@ -18,6 +19,10 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
     const [buyLoading, setBuyLoading] = useState<string | null>(null);
+
+    const [checkoutModal, setCheckoutModal] = useState<Tariff | null>(null);
+    const [contactInfo, setContactInfo] = useState('');
+    const [submitLoading, setSubmitLoading] = useState(false);
 
     const tg = window.Telegram?.WebApp;
 
@@ -36,12 +41,12 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
         setLoading(false);
     };
 
-    const handleBuy = async (tData: Tariff) => {
-        setBuyLoading(tData.id);
+    const [paymentQrModal, setPaymentQrModal] = useState<Tariff | null>(null);
 
+    const processPurchase = async (tData: Tariff, contact?: string) => {
         try {
-            // If we have a telegramId, we can create the order record
             if (telegramId) {
+                // User is in Telegram
                 try {
                     await fetch('/api/catalog-buy', {
                         method: 'POST',
@@ -51,12 +56,28 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 } catch (apiErr) {
                     console.error('API Buy Error:', apiErr);
                 }
+            } else if (contact) {
+                // Web user with contact info
+                try {
+                    await fetch('/api/web-order', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contact, tariffId: tData.id })
+                    });
+                } catch (apiErr) {
+                    console.error('API Web Order Error:', apiErr);
+                }
             }
 
-            const successMsg = `✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату. После оплаты мы вышлем вам данные eSIM в Telegram.`;
+            if (tData.payment_qr_url) {
+                setPaymentQrModal(tData);
+                return;
+            }
+
+            const successMsg = `✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату.`;
 
             if (tg) {
-                tg.showAlert(successMsg);
+                tg.showAlert(successMsg + ' После оплаты мы вышлем вам данные eSIM в Telegram.');
                 if (tData.payment_link) {
                     tg.openLink(tData.payment_link);
                 } else {
@@ -65,29 +86,133 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                     tg.close();
                 }
             } else {
-                alert(successMsg);
                 if (tData.payment_link) {
                     window.location.href = tData.payment_link;
                 } else {
+                    alert(successMsg + ' Перейдите в нашего бота для получения eSIM.');
                     const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
                     window.open(`https://t.me/${botUsername}`, '_blank');
                 }
             }
         } catch (e) {
             console.error(e);
-            const errMsg = 'Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.';
-            if (tg) {
-                tg.showAlert(errMsg);
-                const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-                tg.openTelegramLink(`https://t.me/${botUsername}`);
-            } else {
-                alert(errMsg);
-                const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-                window.open(`https://t.me/${botUsername}`, '_blank');
-            }
-        } finally {
-            setBuyLoading(null);
+            alert('Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.');
+            const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+            if (tg) tg.openTelegramLink(`https://t.me/${botUsername}`);
+            else window.open(`https://t.me/${botUsername}`, '_blank');
         }
+    };
+
+    const renderCheckoutModal = () => (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in text-left">
+            <div className="bg-[#1a1a1e] w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-[40px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
+                
+                <h3 className="text-xl font-headline font-bold text-slate-100 mb-2">Оформление заказа</h3>
+                <p className="text-sm text-on-surface-variant mb-6">
+                    Введите ваш Telegram (например, <b>@username</b>) или номер телефона. Туда мы отправим данные для активации eSIM после оплаты.
+                </p>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">
+                            Контакт для связи
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="@username или +7 999 000 0000"
+                            value={contactInfo}
+                            onChange={(e) => setContactInfo(e.target.value)}
+                            className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors"
+                        />
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                        <button 
+                            onClick={() => setCheckoutModal(null)}
+                            className="flex-1 py-3 rounded-xl font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest transition-colors active:scale-95 text-sm"
+                        >
+                            Отмена
+                        </button>
+                        <button 
+                            onClick={handleSubmitCheckout}
+                            disabled={submitLoading || !contactInfo.trim()}
+                            className="flex-1 py-3 rounded-xl font-bold text-white bg-primary hover:bg-primary/90 transition-colors active:scale-95 disabled:opacity-50 disabled:active:scale-100 shadow-lg text-sm flex items-center justify-center"
+                        >
+                            {submitLoading ? (
+                                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                            ) : (
+                                "К оплате"
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderPaymentQrModal = () => {
+        if (!paymentQrModal) return null;
+        return (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in text-center">
+                <div className="bg-[#1a1a1e] w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-[40px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
+                    
+                    <h3 className="text-xl font-headline font-bold text-slate-100 mb-2">Оплата по QR</h3>
+                    <p className="text-sm text-on-surface-variant mb-6">
+                        Отсканируйте код или сохраните его для оплаты. К оплате: <b>₽{paymentQrModal.price_rub}</b>
+                    </p>
+
+                    <div className="bg-white p-4 rounded-3xl w-fit mx-auto shadow-[0_10px_40px_rgba(0,0,0,0.3)] mb-6">
+                        <img
+                            src={paymentQrModal.payment_qr_url}
+                            alt="Payment QR"
+                            className="w-48 h-48 object-contain rounded-2xl block"
+                        />
+                    </div>
+
+                    <div className="space-y-3 w-full">
+                        <button 
+                            onClick={() => {
+                                setPaymentQrModal(null);
+                                alert("Ожидаем подтверждения платежа! Менеджер скоро свяжется с вами.");
+                            }}
+                            className="w-full bg-primary text-on-primary py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(208,188,255,0.2)] hover:bg-primary/90 active:scale-95 transition-all outline-none"
+                        >
+                            Я ОПЛАТИЛ
+                        </button>
+                        <button 
+                            onClick={() => setPaymentQrModal(null)}
+                            className="w-full py-3.5 rounded-xl font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest transition-colors active:scale-95 text-sm"
+                        >
+                            Закрыть
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const handleBuy = async (tData: Tariff) => {
+        if (!telegramId) {
+            // Not in Telegram, show checkout modal
+            setCheckoutModal(tData);
+            return;
+        }
+
+        setBuyLoading(tData.id);
+        await processPurchase(tData);
+        setBuyLoading(null);
+    };
+
+    const handleSubmitCheckout = async () => {
+        if (!contactInfo.trim()) return;
+        if (!checkoutModal) return;
+
+        setSubmitLoading(true);
+        await processPurchase(checkoutModal, contactInfo);
+        setSubmitLoading(false);
+        setCheckoutModal(null);
     };
 
     if (loading) {
@@ -176,6 +301,7 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
     if (selectedCountry) {
         const countryTariffs = grouped[selectedCountry] || [];
         return (
+            <>
             <div className="space-y-4 animate-fade-in pb-8">
                 <button 
                     onClick={() => setSelectedCountry(null)}
@@ -241,10 +367,14 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                     ))}
                 </div>
             </div>
+            {checkoutModal && renderCheckoutModal()}
+            {paymentQrModal && renderPaymentQrModal()}
+            </>
         );
     }
 
     return (
+        <>
         <div className="space-y-5 animate-fade-in pb-8">
             <h2 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-3 ml-2">
                 <span className="w-12 h-12 bg-primary/20 rounded-full flex items-center justify-center border border-primary/30 shadow-[0_0_15px_rgba(208,188,255,0.2)]">
@@ -286,5 +416,8 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 )}
             </div>
         </div>
+        {checkoutModal && renderCheckoutModal()}
+        {paymentQrModal && renderPaymentQrModal()}
+        </>
     );
 }

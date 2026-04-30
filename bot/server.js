@@ -176,6 +176,65 @@ app.post('/api/catalog-buy', async (req, res) => {
     }
 });
 
+// API endpoint for web orders (guests without telegramId)
+app.post('/api/web-order', async (req, res) => {
+    try {
+        const { contact, tariffId } = req.body;
+        if (!contact || !tariffId) return res.status(400).json({ error: 'Missing fields' });
+
+        // Get tariff details
+        const { data: tariff } = await supabase.from('tariffs').select('*').eq('id', tariffId).single();
+        if (!tariff) return res.status(404).json({ error: 'Tariff not found' });
+
+        // Translate tariff details to manager language
+        const { getLocalizedText } = require('./src/openai');
+
+        // Notify admins/managers
+        const { data: managers } = await supabase.from('users').select('*').in('role', ['manager', 'admin', 'founder']);
+        if (managers && managers.length > 0) {
+            for (const manager of managers) {
+                try {
+                    const mLang = manager.lang_code || 'ru';
+                    
+                    let mlt = {
+                        country: tariff.country,
+                        data_gb: tariff.data_gb,
+                        validity: tariff.validity_period
+                    };
+
+                    if (mLang !== 'ru') {
+                        mlt.country = await getLocalizedText(mLang, tariff.country);
+                        mlt.data_gb = await getLocalizedText(mLang, tariff.data_gb);
+                        mlt.validity = await getLocalizedText(mLang, tariff.validity_period);
+                    }
+
+                    const alertTexts = {
+                        ru: {
+                            text: `🌐 **Новый заказ с сайта!**\nКонтакт: \`${contact}\`\n\nТариф: ${mlt.country} | ${mlt.data_gb} на ${mlt.validity}\nК оплате: **₽${tariff.price_rub}**\n\n⚠️ ВАЖНО: Проверьте поступление оплаты, затем свяжитесь с клиентом по указанному контакту и отправьте QR/данные eSIM.`
+                        },
+                        tr: {
+                            text: `🌐 **Web sitesinden yeni sipariş!**\nİletişim: \`${contact}\`\n\nPlan: ${mlt.country} | ${mlt.data_gb} / ${mlt.validity}\nFiyat: **₽${tariff.price_rub}**\n\n⚠️ ÖNEMLİ: Ödemeyi doğrulayın, ardından müşteriyle iletişime geçin ve eSIM'i gönderin.`
+                        },
+                        en: {
+                            text: `🌐 **New order from Website!**\nContact: \`${contact}\`\n\nPlan: ${mlt.country} | ${mlt.data_gb} for ${mlt.validity}\nPrice: **₽${tariff.price_rub}**\n\n⚠️ IMPORTANT: Verify payment, then contact the client and send the eSIM data.`
+                        }
+                    };
+
+                    const mt = alertTexts[mLang] || alertTexts['en'];
+                    await bot.telegram.sendMessage(manager.telegram_id, mt.text, { parse_mode: 'Markdown' });
+                } catch (e) {
+                    console.error('Failed to notify manager:', e);
+                }
+            }
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Web Order API Error:', err);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // API endpoint to translate text (for Admin Panel Auto-translate)
 app.post('/api/translate', async (req, res) => {
     try {
