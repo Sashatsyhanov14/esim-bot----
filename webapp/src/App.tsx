@@ -133,6 +133,7 @@ const App: React.FC = () => {
   const [globalStats, setGlobalStats] = useState({ totalUsers: 0, totalOrders: 0, totalSales: 0, user: null as any });
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'referral' | 'catalog' | 'stats' | 'tariffs' | 'faq'>('catalog');
 
@@ -148,6 +149,7 @@ const App: React.FC = () => {
 
       let tgUser: any = null;
 
+      // 1. Try Telegram Auth
       if (tg?.initData) {
         try {
           const resp = await fetch('/api/validate-auth', {
@@ -164,6 +166,7 @@ const App: React.FC = () => {
         }
       }
 
+      // 2. Try URL UID (for external web access with a link)
       if (!tgUser?.id) {
         const params = new URLSearchParams(window.location.search);
         const uid = params.get('uid');
@@ -173,6 +176,7 @@ const App: React.FC = () => {
         }
       }
 
+      // 3. Fallback to initDataUnsafe
       if (!tgUser?.id) {
         for (let i = 0; i < 5; i++) {
           tgUser = tg?.initDataUnsafe?.user;
@@ -213,23 +217,29 @@ const App: React.FC = () => {
       let currentUser = userData;
 
       if (!userData && (fetchErr?.code === 'PGRST116' || !fetchErr)) {
-        const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-        const newUser = {
-          telegram_id: tgId,
-          username: username || firstName || tgUser?.first_name || `user_${tgId}`,
-          role: 'client',
-          balance: 0
-        };
-        const { data: created } = await supabase.from('users').insert(newUser).select().single();
-        if (created) {
-          currentUser = created;
+        // If user doesn't exist, we don't necessarily create one if it's just a web browse
+        // But for Telegram WebApp, we do.
+        if (window.Telegram?.WebApp?.initData) {
+            const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+            const newUser = {
+              telegram_id: tgId,
+              username: username || firstName || tgUser?.first_name || `user_${tgId}`,
+              role: 'client',
+              balance: 0
+            };
+            const { data: created } = await supabase.from('users').insert(newUser).select().single();
+            if (created) {
+              currentUser = created;
+            }
         }
       }
 
       if (currentUser) {
         setUser(currentUser);
-        if (currentUser.role === 'founder' || currentUser.role === 'manager') {
-          setActiveTab('stats');
+        if (currentUser.role === 'founder' || currentUser.role === 'manager' || currentUser.role === 'admin') {
+          // If admin logs in, show stats by default if not coming for catalog
+          const params = new URLSearchParams(window.location.search);
+          if (!params.get('tab')) setActiveTab('stats');
         }
 
         const { data: refs } = await supabase
@@ -305,7 +315,8 @@ const App: React.FC = () => {
   const copyToClipboard = (text: string) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
-        tg?.showAlert(t.linkCopied);
+        if (tg) tg.showAlert(t.linkCopied);
+        else alert(t.linkCopied);
       }).catch(() => {
         fallbackCopy(text);
       });
@@ -321,7 +332,8 @@ const App: React.FC = () => {
     textArea.select();
     try {
       document.execCommand('copy');
-      tg?.showAlert(t.linkCopied);
+      if (tg) tg.showAlert(t.linkCopied);
+      else alert(t.linkCopied);
     } catch (err) {
       console.error('Fallback copy failed', err);
     }
@@ -332,40 +344,17 @@ const App: React.FC = () => {
     if (!loginInputId) return;
     setLoading(true);
     await fetchUserData(parseInt(loginInputId));
+    setShowLoginPrompt(false);
   };
 
-  if (loading) return <div className="p-8 text-center text-on-surface-variant font-body animate-pulse mt-20">{t.loading}</div>;
-
-  if (!user) {
-    return (
-      <div className="bg-background min-h-screen flex items-center justify-center p-6">
-        <div className="glass-card p-6 rounded-2xl w-full max-w-sm space-y-6 shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
-          <div className="text-center space-y-2">
-            <div className="w-16 h-16 bg-primary-container/20 border border-primary/20 rounded-full mx-auto flex items-center justify-center mb-4 neon-glow">
-              <span className="material-symbols-outlined text-primary text-3xl">login</span>
-            </div>
-            <h1 className="text-2xl font-headline font-bold text-slate-100">{t.loginTitle}</h1>
-            <p className="text-sm font-body text-on-surface-variant">{t.loginDesc}</p>
-          </div>
-          <div className="space-y-4">
-            <input
-              type="number"
-              value={loginInputId}
-              onChange={(e) => setLoginInputId(e.target.value)}
-              placeholder={t.loginPlaceholder}
-              className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl p-3 text-on-surface focus:outline-none focus:border-primary/50 text-center font-mono"
-            />
-            <button
-              onClick={handleManualLogin}
-              className="w-full bg-primary/20 text-primary border border-primary/30 py-3 rounded-xl font-bold shadow-[0_0_15px_rgba(208,188,255,0.1)] hover:bg-primary/30 transition-all active:scale-95"
-            >
-              {t.loginBtn}
-            </button>
-          </div>
+  if (loading) return (
+    <div className="bg-[#0f0f11] min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+            <div className="text-on-surface-variant font-body animate-pulse">{t.loading}</div>
         </div>
-      </div>
-    );
-  }
+    </div>
+  );
 
   const isAdmin = user?.role === 'founder' || user?.role === 'admin';
   const isManager = user?.role === 'manager';
@@ -381,6 +370,12 @@ const App: React.FC = () => {
           <p className="text-sm font-bold text-primary tracking-widest uppercase">{t.adminSubtitle}</p>
           <h1 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-2">{t.adminTitle}</h1>
         </div>
+        {user && (
+            <div className="bg-surface-container-high px-3 py-1.5 rounded-full flex items-center gap-2 border border-white/5">
+                <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                <span className="text-[10px] font-bold text-slate-300 uppercase">{user.role}</span>
+            </div>
+        )}
       </div>
     </header>
   );
@@ -391,9 +386,19 @@ const App: React.FC = () => {
 
       <div className="flex justify-between items-start">
         <div className="space-y-1">
-          <p className="text-sm font-bold text-secondary tracking-widest uppercase">{t.userSubtitle}</p>
-          <h1 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-2">{t.userTitle}</h1>
+          <p className="text-sm font-bold text-secondary tracking-widest uppercase">{user ? t.userSubtitle : 'Emede eSIM'}</p>
+          <h1 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-2">
+            {activeTab === 'catalog' ? 'Магазин eSIM' : (activeTab === 'faq' ? 'Инструкции' : t.userTitle)}
+          </h1>
         </div>
+        {!user && activeTab !== 'catalog' && (
+            <button 
+                onClick={() => setShowLoginPrompt(true)}
+                className="bg-primary/20 text-primary border border-primary/30 px-4 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all"
+            >
+                Войти
+            </button>
+        )}
       </div>
     </header>
   );
@@ -405,23 +410,22 @@ const App: React.FC = () => {
     if (activeTab === 'faq') {
       return isAdmin ? <AdminFaq t={t} /> : <ClientFaq />;
     }
-
-    // Default to 'stats'
     return <AdminStats t={t} globalStats={globalStats} />;
   };
 
   const handleSendQr = async () => {
     if (!user?.telegram_id) return;
     try {
-      tg?.showAlert("Отправляем QR в чат...");
+      if (tg) tg.showAlert("Отправляем QR в чат...");
       await fetch('/api/send-qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ telegram_id: user.telegram_id })
       });
-      tg?.close();
+      if (tg) tg.close();
     } catch (err) {
-      tg?.showAlert("Ошибка отправки QR");
+      if (tg) tg.showAlert("Ошибка отправки QR");
+      else alert("Ошибка отправки QR");
     }
   };
 
@@ -434,74 +438,98 @@ const App: React.FC = () => {
         return <ClientFaq />;
     }
 
+    if (!user) {
+        return (
+            <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
+                <div className="w-20 h-20 bg-surface-container rounded-full flex items-center justify-center mb-2">
+                    <span className="material-symbols-outlined text-4xl text-on-surface-variant">lock</span>
+                </div>
+                <div>
+                    <h2 className="text-xl font-bold text-slate-100 mb-2">Требуется вход</h2>
+                    <p className="text-on-surface-variant text-sm max-w-[250px]">Войдите через Telegram, чтобы видеть свою статистику и бонусы.</p>
+                </div>
+                <button 
+                    onClick={() => setShowLoginPrompt(true)}
+                    className="bg-primary text-on-primary px-8 py-3 rounded-2xl font-bold shadow-lg active:scale-95 transition-all"
+                >
+                    Войти в систему
+                </button>
+            </div>
+        );
+    }
+
     return (
     <div className="space-y-6">
-      <div className="bg-[#201f22] p-5 rounded-3xl relative overflow-hidden flex flex-col items-center text-center border border-white/5 mx-2">
-        <div className="w-14 h-14 bg-secondary-container/20 border border-secondary/20 rounded-full flex items-center justify-center mb-4">
-          <span className="material-symbols-outlined text-secondary text-2xl">account_balance_wallet</span>
+      <div className="bg-[#201f22] p-6 rounded-[2rem] relative overflow-hidden flex flex-col items-center text-center border border-white/5 mx-2 shadow-2xl">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-secondary/10 rounded-full blur-[40px] -z-10"></div>
+        <div className="w-16 h-16 bg-secondary-container/20 border border-secondary/20 rounded-full flex items-center justify-center mb-4">
+          <span className="material-symbols-outlined text-secondary text-3xl">account_balance_wallet</span>
         </div>
-        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-1">{t.bonusBalance}</p>
-        <h2 className="text-4xl font-headline font-extrabold text-slate-100 mb-2">{user?.balance?.toFixed(0) || '0'}₽</h2>
+        <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">{t.bonusBalance}</p>
+        <h2 className="text-5xl font-headline font-extrabold text-slate-100 mb-4">{user?.balance?.toFixed(0) || '0'}₽</h2>
         {(user?.balance || 0) > 0 && (
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="mt-2 bg-primary/20 text-primary border border-primary/30 px-6 py-2 rounded-xl font-bold uppercase tracking-widest text-[10px] active:scale-95 transition-all"
+            className="bg-primary/20 text-primary border border-primary/30 px-8 py-2.5 rounded-xl font-bold uppercase tracking-widest text-xs active:scale-95 transition-all hover:bg-primary/30"
           >
             {t.withdraw}
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mx-2">
-        <div className="bg-surface-container-low p-4 rounded-2xl flex flex-col justify-between min-h-[100px] border border-white/5">
+      <div className="grid grid-cols-2 gap-4 mx-2">
+        <div className="bg-surface-container-low p-5 rounded-3xl flex flex-col justify-between min-h-[120px] border border-white/5 shadow-xl">
           <div className="flex items-center gap-2 mb-2">
-            <div className="bg-primary/10 p-1.5 rounded-lg flex items-center justify-center">
-              <span className="material-symbols-outlined text-primary text-[18px]">group_add</span>
+            <div className="bg-primary/10 p-2 rounded-xl flex items-center justify-center">
+              <span className="material-symbols-outlined text-primary text-[20px]">group_add</span>
             </div>
             <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{t.invitedLabel}</p>
           </div>
-          <span className="text-2xl font-headline font-extrabold text-slate-200">{referrals.length}</span>
+          <span className="text-3xl font-headline font-extrabold text-slate-200">{referrals.length}</span>
         </div>
 
-        <div className="bg-surface-container-low p-4 rounded-2xl flex flex-col justify-between min-h-[100px] border border-white/5">
+        <div className="bg-surface-container-low p-5 rounded-3xl flex flex-col justify-between min-h-[120px] border border-white/5 shadow-xl">
           <div className="flex items-center gap-2 mb-2">
-            <div className="bg-secondary/10 p-1.5 rounded-lg flex items-center justify-center">
-              <span className="material-symbols-outlined text-secondary text-[18px]">shopping_bag</span>
+            <div className="bg-secondary/10 p-2 rounded-xl flex items-center justify-center">
+              <span className="material-symbols-outlined text-secondary text-[20px]">shopping_bag</span>
             </div>
             <p className="text-on-surface-variant text-[10px] font-bold uppercase tracking-wider">{t.boughtEsimLabel}</p>
           </div>
-          <span className="text-2xl font-headline font-extrabold text-slate-200">{purchasedRefsCount}</span>
+          <span className="text-3xl font-headline font-extrabold text-slate-200">{purchasedRefsCount}</span>
         </div>
       </div>
 
       {payoutsHistory.length > 0 && (
-        <div className="glass-card p-5 rounded-3xl mx-2 border border-white/5">
-            <h3 className="text-sm font-headline font-bold text-on-surface mb-3 flex items-center gap-2">
-              <span className="material-symbols-outlined text-tertiary text-[18px]">history</span>
+        <div className="glass-card p-6 rounded-[2rem] mx-2 border border-white/5">
+            <h3 className="text-sm font-headline font-bold text-on-surface mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-tertiary text-[20px]">history</span>
               История выплат
             </h3>
-            <div className="flex flex-col gap-2 max-h-40 overflow-y-auto clean-scrollbar pr-1">
+            <div className="flex flex-col gap-3 max-h-48 overflow-y-auto clean-scrollbar pr-2">
               {payoutsHistory.map((p, idx) => (
-                   <div key={idx} className="flex justify-between items-center bg-surface-container-lowest p-3 rounded-xl border border-outline-variant/10">
-                       <span className="text-xs text-on-surface-variant">{new Date(p.created_at).toLocaleDateString()} {new Date(p.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                       <span className="font-bold text-green-400 text-sm">+{Number(p.content.split(':')[1]).toFixed(0)}₽</span>
+                   <div key={idx} className="flex justify-between items-center bg-surface-container-lowest p-4 rounded-2xl border border-outline-variant/10">
+                       <div className="flex flex-col gap-0.5">
+                           <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-tight">{new Date(p.created_at).toLocaleDateString()}</span>
+                           <span className="text-xs text-on-surface-variant/60">{new Date(p.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                       </div>
+                       <span className="font-bold text-green-400 text-lg">+{Number(p.content.split(':')[1]).toFixed(0)}₽</span>
                    </div>
               ))}
             </div>
         </div>
       )}
 
-      <div className="glass-card p-5 rounded-3xl mx-2 border border-primary/20 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-[40px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
-        <h3 className="text-lg font-headline font-bold text-on-surface mb-3 flex items-center gap-2">
+      <div className="glass-card p-6 rounded-[2rem] mx-2 border border-primary/20 relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-[60px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
+        <h3 className="text-xl font-headline font-bold text-on-surface mb-3 flex items-center gap-2">
           {t.inviteFriend}
         </h3>
-        <p className="text-sm font-medium text-on-surface-variant mb-4">{t.promoTitle}</p>
+        <p className="text-sm font-medium text-on-surface-variant mb-6">{t.promoTitle}</p>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div 
             onClick={() => copyToClipboard(refLink)}
-            className="flex items-center gap-2 bg-surface-container-lowest p-2 rounded-xl border border-outline-variant/10 cursor-pointer hover:bg-surface-container-low transition-colors min-h-[48px]"
+            className="flex items-center gap-2 bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/10 cursor-pointer hover:bg-surface-container-low transition-all min-h-[56px] group"
           >
             <input
               type="text"
@@ -509,36 +537,39 @@ const App: React.FC = () => {
               value={refLink}
               className="flex-1 bg-transparent text-sm text-on-surface outline-none px-2 font-mono cursor-pointer"
             />
+            <span className="material-symbols-outlined text-primary text-xl group-hover:scale-110 transition-transform">content_copy</span>
           </div>
           <div 
             onClick={() => copyToClipboard(String(user?.telegram_id))}
-            className="flex items-center gap-2 bg-surface-container-lowest p-2 rounded-xl border border-outline-variant/10 cursor-pointer hover:bg-surface-container-low transition-colors min-h-[48px]"
+            className="flex items-center gap-2 bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/10 cursor-pointer hover:bg-surface-container-low transition-all min-h-[56px] group"
           >
-            <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider px-2 border-r border-outline-variant/10 mr-1">{t.promoLabel}</span>
+            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest px-3 border-r border-outline-variant/10 mr-1">{t.promoLabel}</span>
             <input
               type="text"
               readOnly
               value={user?.telegram_id || ''}
-              className="flex-1 bg-transparent font-bold text-primary outline-none px-2 font-mono text-[15px] cursor-pointer"
+              className="flex-1 bg-transparent font-bold text-primary outline-none px-2 font-mono text-lg cursor-pointer"
             />
+            <span className="material-symbols-outlined text-primary text-xl group-hover:scale-110 transition-transform">content_copy</span>
           </div>
         </div>
 
-        <div className="mt-5 border-t border-outline-variant/10 pt-5 flex flex-col items-center pb-2">
-          <div className="bg-white p-3 rounded-2xl w-fit mx-auto relative group shadow-[0_0_20px_rgba(255,255,255,0.1)] mb-4">
+        <div className="mt-8 border-t border-outline-variant/10 pt-8 flex flex-col items-center pb-2">
+          <div className="bg-white p-4 rounded-3xl w-fit mx-auto relative group shadow-[0_10px_40px_rgba(0,0,0,0.3)] mb-6">
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(refLink)}`}
               alt="QR Code"
               width={180}
               height={180}
-              className="rounded-xl block"
+              className="rounded-2xl block"
             />
+            <div className="absolute inset-0 bg-primary/10 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
           </div>
           <button
             onClick={handleSendQr}
-            className="w-full bg-primary/20 text-primary border border-primary/30 py-3.5 rounded-xl font-bold active:scale-95 transition-transform flex items-center justify-center gap-2"
+            className="w-full bg-primary/20 text-primary border border-primary/30 py-4 rounded-2xl font-bold active:scale-95 transition-all flex items-center justify-center gap-2 hover:bg-primary/30"
           >
-            <span className="material-symbols-outlined text-[20px]">send_to_mobile</span>
+            <span className="material-symbols-outlined text-[22px]">send_to_mobile</span>
             {t.getQrChat}
           </button>
         </div>
@@ -546,60 +577,115 @@ const App: React.FC = () => {
     </div>
     );
   };
+
   const isManagerTab = ['stats', 'tariffs', 'faq'].includes(activeTab);
 
   return (
-    <>
+    <div className="bg-[#0f0f11] min-h-screen text-slate-100 selection:bg-primary/30">
       {isStaff && isManagerTab ? renderAdminHeader() : renderUserHeader()}
-      <main className="px-4 pt-2 space-y-8 max-w-2xl mx-auto pb-24">
+      
+      <main className="px-4 pt-2 space-y-8 max-w-2xl mx-auto pb-32">
         {isStaff && isManagerTab ? renderAdminContent() : renderUserContent()}
       </main>
 
-      <nav className="fixed bottom-0 w-full z-50 flex justify-around items-center px-2 pb-6 pt-3 bg-[#131315]/80 backdrop-blur-2xl rounded-t-[1.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.5)] border-t border-white/5">
+      {/* Navigation */}
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-lg z-50 flex justify-around items-center px-4 py-3 bg-[#1a1a1e]/90 backdrop-blur-3xl rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/5">
         <button
           onClick={() => setActiveTab('catalog')}
-          className={`flex flex-col items-center p-2 rounded-xl transition-all w-full max-w-[80px] ${activeTab === 'catalog' ? 'text-primary scale-110' : 'text-on-surface-variant hover:text-on-surface'}`}
+          className={`flex flex-col items-center p-2 rounded-2xl transition-all w-full max-w-[80px] ${activeTab === 'catalog' ? 'text-primary' : 'text-on-surface-variant hover:text-slate-100'}`}
         >
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'catalog' ? "\'FILL\' 1" : "\'FILL\' 0" }}>storefront</span>
-          <span className="font-['Inter'] text-[9px] font-extrabold uppercase tracking-widest mt-1">{t.tabCatalog}</span>
+          <div className={`p-1.5 rounded-xl mb-1 transition-all ${activeTab === 'catalog' ? 'bg-primary/10' : ''}`}>
+            <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: activeTab === 'catalog' ? "\'FILL\' 1" : "\'FILL\' 0" }}>storefront</span>
+          </div>
+          <span className="font-['Inter'] text-[8px] font-extrabold uppercase tracking-widest">{t.tabCatalog}</span>
         </button>
 
         <button
           onClick={() => setActiveTab('referral')}
-          className={`flex flex-col items-center p-2 rounded-xl transition-all w-full max-w-[80px] ${activeTab === 'referral' ? 'text-secondary scale-110' : 'text-on-surface-variant hover:text-on-surface'}`}
+          className={`flex flex-col items-center p-2 rounded-2xl transition-all w-full max-w-[80px] ${activeTab === 'referral' ? 'text-secondary' : 'text-on-surface-variant hover:text-slate-100'}`}
         >
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'referral' ? "\'FILL\' 1" : "\'FILL\' 0" }}>group</span>
-          <span className="font-['Inter'] text-[9px] font-extrabold uppercase tracking-widest mt-1">{t.tabReferral}</span>
+          <div className={`p-1.5 rounded-xl mb-1 transition-all ${activeTab === 'referral' ? 'bg-secondary/10' : ''}`}>
+            <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: activeTab === 'referral' ? "\'FILL\' 1" : "\'FILL\' 0" }}>group</span>
+          </div>
+          <span className="font-['Inter'] text-[8px] font-extrabold uppercase tracking-widest">{t.tabReferral}</span>
         </button>
 
         {isStaff && (
           <button
             onClick={() => setActiveTab('stats')}
-            className={`flex flex-col items-center p-2 rounded-xl transition-all w-full max-w-[80px] ${activeTab === 'stats' ? 'text-primary scale-110' : 'text-on-surface-variant hover:text-on-surface'}`}
+            className={`flex flex-col items-center p-2 rounded-2xl transition-all w-full max-w-[80px] ${activeTab === 'stats' ? 'text-primary' : 'text-on-surface-variant hover:text-slate-100'}`}
           >
-            <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'stats' ? "\'FILL\' 1" : "\'FILL\' 0" }}>bar_chart</span>
-            <span className="font-['Inter'] text-[9px] font-extrabold uppercase tracking-widest mt-1">{t.tabStats}</span>
+            <div className={`p-1.5 rounded-xl mb-1 transition-all ${activeTab === 'stats' ? 'bg-primary/10' : ''}`}>
+                <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: activeTab === 'stats' ? "\'FILL\' 1" : "\'FILL\' 0" }}>bar_chart</span>
+            </div>
+            <span className="font-['Inter'] text-[8px] font-extrabold uppercase tracking-widest">{t.tabStats}</span>
           </button>
         )}
 
         {isAdmin && (
             <button
               onClick={() => setActiveTab('tariffs')}
-              className={`flex flex-col items-center p-2 rounded-xl transition-all w-full max-w-[80px] ${activeTab === 'tariffs' ? 'text-primary scale-110' : 'text-on-surface-variant hover:text-on-surface'}`}
+              className={`flex flex-col items-center p-2 rounded-2xl transition-all w-full max-w-[80px] ${activeTab === 'tariffs' ? 'text-primary' : 'text-on-surface-variant hover:text-slate-100'}`}
             >
-              <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'tariffs' ? "\'FILL\' 1" : "\'FILL\' 0" }}>sell</span>
-              <span className="font-['Inter'] text-[9px] font-extrabold uppercase tracking-widest mt-1">{t.tabTariffs}</span>
+              <div className={`p-1.5 rounded-xl mb-1 transition-all ${activeTab === 'tariffs' ? 'bg-primary/10' : ''}`}>
+                  <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: activeTab === 'tariffs' ? "\'FILL\' 1" : "\'FILL\' 0" }}>sell</span>
+              </div>
+              <span className="font-['Inter'] text-[8px] font-extrabold uppercase tracking-widest">{t.tabTariffs}</span>
             </button>
         )}
 
         <button
           onClick={() => setActiveTab('faq')}
-          className={`flex flex-col items-center p-2 rounded-xl transition-all w-full max-w-[80px] ${activeTab === 'faq' ? (isStaff && isManagerTab ? 'text-primary scale-110' : 'text-secondary scale-110') : 'text-on-surface-variant hover:text-on-surface'}`}
+          className={`flex flex-col items-center p-2 rounded-2xl transition-all w-full max-w-[80px] ${activeTab === 'faq' ? (isStaff && isManagerTab ? 'text-primary' : 'text-secondary') : 'text-on-surface-variant hover:text-slate-100'}`}
         >
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: activeTab === 'faq' ? "\'FILL\' 1" : "\'FILL\' 0" }}>help</span>
-          <span className="font-['Inter'] text-[9px] font-extrabold uppercase tracking-widest mt-1">{t.tabFaq}</span>
+          <div className={`p-1.5 rounded-xl mb-1 transition-all ${activeTab === 'faq' ? (isStaff && isManagerTab ? 'bg-primary/10' : 'bg-secondary/10') : ''}`}>
+              <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: activeTab === 'faq' ? "\'FILL\' 1" : "\'FILL\' 0" }}>help</span>
+          </div>
+          <span className="font-['Inter'] text-[8px] font-extrabold uppercase tracking-widest">{t.tabFaq}</span>
         </button>
       </nav>
+
+      {/* Login Modal */}
+      {showLoginPrompt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div className="glass-card p-8 rounded-[2.5rem] w-full max-w-sm space-y-8 shadow-[0_30px_60px_rgba(0,0,0,0.6)] border border-white/10 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-[40px] -z-10"></div>
+                <button 
+                    onClick={() => setShowLoginPrompt(false)}
+                    className="absolute top-4 right-4 text-on-surface-variant hover:text-slate-100 transition-colors"
+                >
+                    <span className="material-symbols-outlined">close</span>
+                </button>
+                <div className="text-center space-y-3">
+                    <div className="w-20 h-20 bg-primary-container/20 border border-primary/20 rounded-full mx-auto flex items-center justify-center mb-6 neon-glow">
+                        <span className="material-symbols-outlined text-primary text-4xl">login</span>
+                    </div>
+                    <h1 className="text-3xl font-headline font-bold text-slate-100">{t.loginTitle}</h1>
+                    <p className="text-sm font-body text-on-surface-variant px-4">{t.loginDesc}</p>
+                </div>
+                <div className="space-y-4">
+                    <div className="relative">
+                        <input
+                        type="number"
+                        value={loginInputId}
+                        onChange={(e) => setLoginInputId(e.target.value)}
+                        placeholder={t.loginPlaceholder}
+                        className="w-full bg-[#131315] border border-outline-variant/20 rounded-2xl p-4 text-on-surface focus:outline-none focus:border-primary/50 text-center font-mono text-lg shadow-inner"
+                        />
+                    </div>
+                    <button
+                        onClick={handleManualLogin}
+                        className="w-full bg-primary text-on-primary py-4 rounded-2xl font-bold shadow-[0_10px_20px_rgba(208,188,255,0.2)] hover:bg-primary/90 transition-all active:scale-95"
+                    >
+                        {t.loginBtn}
+                    </button>
+                </div>
+                <p className="text-[10px] text-center text-on-surface-variant/40 uppercase tracking-widest">
+                    Введите ID из вашего профиля в боте
+                </p>
+            </div>
+        </div>
+      )}
 
       <WithdrawModal
         isOpen={isModalOpen}
@@ -607,7 +693,7 @@ const App: React.FC = () => {
         balance={user?.balance || 0}
         telegramId={user?.telegram_id}
       />
-    </>
+    </div>
   );
 };
 

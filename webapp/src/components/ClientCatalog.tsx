@@ -37,38 +37,54 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
     };
 
     const handleBuy = async (tData: Tariff) => {
-        if (!tg) {
-            alert('Откройте WebApp через Telegram');
-            return;
-        }
-
         setBuyLoading(tData.id);
 
         try {
+            // If we have a telegramId, we can create the order record
             if (telegramId) {
-                await fetch('/api/catalog-buy', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ telegramId, tariffId: tData.id })
-                });
+                try {
+                    await fetch('/api/catalog-buy', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ telegramId, tariffId: tData.id })
+                    });
+                } catch (apiErr) {
+                    console.error('API Buy Error:', apiErr);
+                }
             }
 
-            tg.showAlert(`✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату или в чат с ботом. После оплаты мы вышлем вам данные eSIM.`);
+            const successMsg = `✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату. После оплаты мы вышлем вам данные eSIM в Telegram.`;
 
-            if (tData.payment_link) {
-                tg.openLink(tData.payment_link);
+            if (tg) {
+                tg.showAlert(successMsg);
+                if (tData.payment_link) {
+                    tg.openLink(tData.payment_link);
+                } else {
+                    const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+                    tg.openTelegramLink(`https://t.me/${botUsername}`);
+                    tg.close();
+                }
             } else {
-                const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-                tg.openTelegramLink(`https://t.me/${botUsername}`);
-                tg.close();
+                alert(successMsg);
+                if (tData.payment_link) {
+                    window.location.href = tData.payment_link;
+                } else {
+                    const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+                    window.open(`https://t.me/${botUsername}`, '_blank');
+                }
             }
-            setTimeout(() => tg.close(), 1000); 
         } catch (e) {
             console.error(e);
-            tg.showAlert('Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.');
-            const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-            tg.openTelegramLink(`https://t.me/${botUsername}`);
-            setTimeout(() => tg.close(), 1000);
+            const errMsg = 'Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.';
+            if (tg) {
+                tg.showAlert(errMsg);
+                const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+                tg.openTelegramLink(`https://t.me/${botUsername}`);
+            } else {
+                alert(errMsg);
+                const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
+                window.open(`https://t.me/${botUsername}`, '_blank');
+            }
         } finally {
             setBuyLoading(null);
         }
