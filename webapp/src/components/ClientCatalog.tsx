@@ -190,7 +190,7 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                     {selectedCountry}
                 </h2>
 
-                <div className="grid grid-cols-1 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {countryTariffs.map(tData => (
                         <div key={tData.id} className="glass-card p-5 rounded-2xl relative overflow-hidden group shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-[40px] -z-10 translate-x-1/3 -translate-y-1/3 transition-all group-hover:bg-primary/20 pointer-events-none"></div>
@@ -264,7 +264,7 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mx-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mx-1">
                 {countries.map(c => (
                     <button
                         key={c}

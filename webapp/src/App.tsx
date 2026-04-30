@@ -365,7 +365,7 @@ const App: React.FC = () => {
       <div className="absolute top-0 right-0 w-64 h-64 bg-primary/20 rounded-full blur-[80px] -z-10 translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
       <div className="absolute top-0 left-0 w-48 h-48 bg-secondary/10 rounded-full blur-[60px] -z-10 -translate-x-1/2 translate-y-1/4 pointer-events-none"></div>
 
-      <div className="flex justify-between items-start">
+      <div className="max-w-2xl mx-auto flex justify-between items-start">
         <div className="space-y-1">
           <p className="text-sm font-bold text-primary tracking-widest uppercase">{t.adminSubtitle}</p>
           <h1 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-2">{t.adminTitle}</h1>
@@ -384,7 +384,7 @@ const App: React.FC = () => {
     <header className="px-6 pt-10 pb-6 relative overflow-hidden">
       <div className="absolute top-0 right-0 w-64 h-64 bg-secondary/20 rounded-full blur-[80px] -z-10 translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
 
-      <div className="flex justify-between items-start">
+      <div className="max-w-2xl mx-auto flex justify-between items-start">
         <div className="space-y-1">
           <p className="text-sm font-bold text-secondary tracking-widest uppercase">{user ? t.userSubtitle : 'Emede eSIM'}</p>
           <h1 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-2">
