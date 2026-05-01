@@ -60,6 +60,17 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 }
             } else if (contact) {
                 // Web guest user — show payment info directly
+                try {
+                    // Save web order info in chat_history since orders table lacks contact_info
+                    await supabase.from('chat_history').insert({
+                        user_id: 0, // 0 is our reserved "Web Guest" user
+                        role: 'user',
+                        content: `WEB_ORDER|${tData.id}|${contact}|${tData.price_rub}`
+                    });
+                } catch (dbErr) {
+                    console.error('Direct DB order error:', dbErr);
+                }
+
                 // Attempt API notification in background (non-blocking, may fail on static hosting)
                 fetch('/api/web-order', {
                     method: 'POST',
