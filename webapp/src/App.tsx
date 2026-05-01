@@ -386,7 +386,7 @@ const App: React.FC = () => {
 
       <div className="max-w-2xl mx-auto flex justify-between items-start">
         <div className="space-y-1">
-          <p className="text-sm font-bold text-secondary tracking-widest uppercase">{user ? t.userSubtitle : 'Emede eSIM'}</p>
+          <p className="text-sm font-bold text-secondary tracking-widest uppercase">{user ? t.userSubtitle : 'Emedeo eSIM'}</p>
           <h1 className="text-3xl font-headline font-extrabold text-slate-100 flex items-center gap-2">
             {activeTab === 'catalog' ? 'Магазин eSIM' : (activeTab === 'faq' ? 'Инструкции' : t.userTitle)}
           </h1>

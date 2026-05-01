@@ -46,7 +46,7 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
     const processPurchase = async (tData: Tariff, contact?: string) => {
         try {
             if (telegramId) {
-                // User is in Telegram
+                // User is in Telegram — try API first
                 try {
                     const res = await fetch('/api/catalog-buy', {
                         method: 'POST',
@@ -59,20 +59,18 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                     throw apiErr;
                 }
             } else if (contact) {
-                // Web user with contact info
-                try {
-                    const res = await fetch('/api/web-order', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contact, tariffId: tData.id })
-                    });
-                    if (!res.ok) throw new Error('API web-order failed');
-                } catch (apiErr) {
-                    console.error('API Web Order Error:', apiErr);
-                    throw apiErr;
-                }
+                // Web guest user — show payment info directly
+                // Attempt API notification in background (non-blocking, may fail on static hosting)
+                fetch('/api/web-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contact, tariffId: tData.id })
+                }).catch(() => {
+                    console.log('[INFO] API web-order unreachable — guest will pay via QR');
+                });
             }
 
+            // Show payment QR if available
             if (tData.payment_qr_url) {
                 setPaymentQrModal(tData);
                 return;
@@ -95,7 +93,7 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 if (tData.payment_link) {
                     window.location.href = tData.payment_link;
                 } else {
-                    alert(successMsg + ' Перейдите в нашего бота для получения eSIM.');
+                    alert(successMsg + ' Менеджер свяжется с вами для отправки eSIM.');
                     const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
                     window.open(`https://t.me/${botUsername}`, '_blank');
                 }

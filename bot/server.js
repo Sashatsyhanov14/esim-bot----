@@ -7,6 +7,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const express = require('express');
 const cors = require('cors');
 const bot = require('./index');
+const { supabase } = require('./src/supabase');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -69,7 +70,7 @@ app.post('/api/catalog-buy', async (req, res) => {
         const { telegramId, tariffId } = req.body;
         if (!telegramId || !tariffId) return res.status(400).json({ error: 'Missing parameters' });
 
-        const { createOrder, getTariffs, supabase } = require('./src/supabase');
+        const { createOrder, getTariffs } = require('./src/supabase');
         let { data: tariffs } = await getTariffs();
         const tariff = (tariffs || []).find(t => t.id === tariffId);
 
@@ -180,10 +181,12 @@ app.post('/api/catalog-buy', async (req, res) => {
 app.post('/api/web-order', async (req, res) => {
     try {
         const { contact, tariffId } = req.body;
+        console.log(`[API] Web Order Request: contact=${contact}, tariffId=${tariffId}`);
         if (!contact || !tariffId) return res.status(400).json({ error: 'Missing fields' });
 
         // Get tariff details
         const { data: tariff } = await supabase.from('tariffs').select('*').eq('id', tariffId).single();
+        console.log(`[API] Tariff lookup: ${tariff ? 'FOUND' : 'NOT FOUND'} (${tariff?.country})`);
         if (!tariff) return res.status(404).json({ error: 'Tariff not found' });
 
         // Translate tariff details to manager language
@@ -284,7 +287,7 @@ app.post('/api/manage-role', async (req, res) => {
             return res.status(400).json({ error: 'Missing parameters' });
         }
 
-        const { supabase } = require('./src/supabase');
+
 
         // 1. Verify that requester is an admin/founder
         const { data: adminUser } = await supabase.from('users').select('role').eq('telegram_id', adminId).single();
