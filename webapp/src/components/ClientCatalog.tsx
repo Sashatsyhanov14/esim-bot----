@@ -70,34 +70,12 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                 });
             }
 
-            // Show payment QR if available
-            if (tData.payment_qr_url) {
-                setPaymentQrModal(tData);
-                return;
-            }
-
-            const successMsg = `✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату.`;
-
-            const isTgApp = tg && tg.platform !== 'unknown' && tg.initData;
-
-            if (isTgApp) {
-                tg.showAlert(successMsg + ' После оплаты мы вышлем вам данные eSIM в Telegram.');
-                if (tData.payment_link) {
-                    tg.openLink(tData.payment_link);
-                } else {
-                    const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-                    tg.openTelegramLink(`https://t.me/${botUsername}`);
-                    tg.close();
-                }
-            } else {
-                if (tData.payment_link) {
-                    window.location.href = tData.payment_link;
-                } else {
-                    alert(successMsg + ' Менеджер свяжется с вами для отправки eSIM.');
-                    const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-                    window.open(`https://t.me/${botUsername}`, '_blank');
-                }
-            }
+            // Always show payment QR modal (fallback to default QR if missing)
+            setPaymentQrModal({
+                ...tData,
+                payment_qr_url: tData.payment_qr_url || '/payment_qr.jpg'
+            });
+            return;
         } catch (e) {
             console.error(e);
             alert('Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.');
