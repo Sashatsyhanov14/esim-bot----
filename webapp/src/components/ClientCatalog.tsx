@@ -152,43 +152,43 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
         if (!paymentQrModal) return null;
         return (
             <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fade-in text-center">
-                <div className="bg-[#1a1a1e] w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center">
+                <div className="bg-[#1a1a1e] w-full max-w-[330px] rounded-[2rem] p-5 border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-[40px] -z-10 translate-x-1/2 -translate-y-1/2"></div>
                     
-                    <h3 className="text-xl font-headline font-bold text-slate-100 mb-2">Оплата по QR</h3>
-                    <p className="text-sm text-on-surface-variant mb-4">
-                        Отсканируйте код. <b>Внимание:</b> при оплате вам нужно будет самостоятельно ввести точную сумму перевода.
+                    <h3 className="text-lg font-headline font-bold text-slate-100 mb-1">Оплата по QR</h3>
+                    <p className="text-[11px] text-on-surface-variant mb-3 leading-tight">
+                        Отсканируйте код и введите точную сумму.
                     </p>
-                    <div className="bg-primary/20 border border-primary/30 p-3 rounded-xl w-full mb-6">
-                        <span className="text-xs uppercase tracking-widest text-primary font-bold">Сумма к оплате</span>
-                        <div className="text-3xl font-extrabold text-white">₽{paymentQrModal.price_rub}</div>
+                    <div className="bg-primary/20 border border-primary/30 p-2.5 rounded-xl w-full mb-4">
+                        <span className="text-[10px] uppercase tracking-widest text-primary font-bold">Сумма к оплате</span>
+                        <div className="text-2xl font-extrabold text-white">₽{paymentQrModal.price_rub}</div>
                     </div>
 
-                    <div className="bg-white p-2 rounded-2xl w-fit mx-auto shadow-[0_10px_50px_rgba(255,255,255,0.1)] mb-4 overflow-hidden">
+                    <div className="bg-white p-1.5 rounded-xl w-fit mx-auto shadow-[0_10px_50px_rgba(255,255,255,0.05)] mb-4 overflow-hidden">
                         <img
                             src={paymentQrModal.payment_qr_url}
                             alt="Payment QR"
-                            className="w-64 h-64 object-contain block"
+                            className="w-48 h-48 object-contain block"
                         />
                     </div>
 
-                    <p className="text-[12px] text-on-surface-variant mb-6 leading-relaxed bg-primary/5 p-3 rounded-xl border border-primary/10">
-                        Если возникли проблемы, напишите боту <a href="https://t.me/emedeoworld_bot" target="_blank" className="text-primary font-bold">@emedeoworld_bot</a>. Через него также можно оформить заказ.
+                    <p className="text-[10px] text-on-surface-variant mb-4 leading-relaxed bg-primary/5 p-2.5 rounded-xl border border-primary/10">
+                        Проблемы? Пишите <a href="https://t.me/emedeoworld_bot" target="_blank" className="text-primary font-bold">@emedeoworld_bot</a>.
                     </p>
 
-                    <div className="space-y-3 w-full">
+                    <div className="space-y-2 w-full">
                         <button 
                             onClick={() => {
                                 setPaymentQrModal(null);
                                 alert("Ожидаем подтверждения платежа! Менеджер скоро свяжется с вами.");
                             }}
-                            className="w-full bg-primary text-on-primary py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(208,188,255,0.2)] hover:bg-primary/90 active:scale-95 transition-all outline-none"
+                            className="w-full bg-primary text-on-primary py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-[0_4px_20px_rgba(208,188,255,0.2)] hover:bg-primary/90 active:scale-95 transition-all outline-none text-sm"
                         >
                             Я ОПЛАТИЛ
                         </button>
                         <button 
                             onClick={() => setPaymentQrModal(null)}
-                            className="w-full py-3.5 rounded-xl font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest transition-colors active:scale-95 text-sm"
+                            className="w-full py-2.5 rounded-xl font-bold text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest transition-colors active:scale-95 text-[12px]"
                         >
                             Закрыть
                         </button>
