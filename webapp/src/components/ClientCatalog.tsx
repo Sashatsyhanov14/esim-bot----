@@ -189,6 +189,10 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                             Закрыть
                         </button>
                     </div>
+
+                    <p className="text-[10px] text-on-surface-variant mt-4 leading-relaxed">
+                        Если возникли проблемы, напишите боту <a href="https://t.me/emedeoworld_bot" target="_blank" className="text-primary font-bold">@emedeoworld_bot</a>. Через него также можно оформить заказ.
+                    </p>
                 </div>
             </div>
         );
