@@ -375,47 +375,44 @@ supabase
     .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
-        table: 'chat_history', 
-        filter: 'user_id=eq.0' 
+        table: 'web_orders' 
     }, async (payload) => {
         const row = payload.new;
-        if (row.content && row.content.startsWith('WEB_ORDER|')) {
-            console.log('[REALTIME] New Web Order detected:', row.content);
-            const parts = row.content.split('|');
-            const tariffId = parts[1];
-            const contact = parts[2];
-            const price = parts[3];
+        console.log('[REALTIME] New Web Order detected in web_orders table:', row.id);
+        
+        const tariffId = row.tariff_id;
+        const contact = row.contact_info;
+        const price = row.price_rub;
 
-            try {
-                // Get tariff info
-                const { data: tariff } = await supabase.from('tariffs').select('*').eq('id', tariffId).single();
-                
-                // Get managers
-                const { data: managers } = await supabase.from('users').select('*').in('role', ['manager', 'admin', 'founder']);
-                
-                if (managers && managers.length > 0) {
-                    for (const manager of managers) {
-                        try {
-                            const mLang = manager.lang_code || 'ru';
-                            const mlt = tariff ? {
-                                country: tariff.country,
-                                data_gb: tariff.data_gb,
-                                validity: tariff.validity_period
-                            } : { country: 'Unknown', data_gb: '?', validity: '?' };
+        try {
+            // Get tariff info
+            const { data: tariff } = await supabase.from('tariffs').select('*').eq('id', tariffId).single();
+            
+            // Get managers
+            const { data: managers } = await supabase.from('users').select('*').in('role', ['manager', 'admin', 'founder']);
+            
+            if (managers && managers.length > 0) {
+                for (const manager of managers) {
+                    try {
+                        const mLang = manager.lang_code || 'ru';
+                        const mlt = tariff ? {
+                            country: tariff.country,
+                            data_gb: tariff.data_gb,
+                            validity: tariff.validity_period
+                        } : { country: 'Unknown', data_gb: '?', validity: '?' };
 
-                            const alertText = mLang === 'ru' 
-                                ? `🌐 **Новый заказ с сайта!**\nКонтакт: \`${contact}\`\n\nТариф: ${mlt.country} | ${mlt.data_gb} на ${mlt.validity}\nК оплате: **₽${price || tariff?.price_rub || '?'}**\n\n⚠️ ВАЖНО: Проверьте поступление оплаты, затем свяжитесь с клиентом по указанному контакту и отправьте QR/данные eSIM.`
-                                : `🌐 **New order from Website!**\nContact: \`${contact}\`\n\nPlan: ${mlt.country} | ${mlt.data_gb} for ${mlt.validity}\nPrice: **₽${price || tariff?.price_rub || '?'}**\n\n⚠️ IMPORTANT: Verify payment, then contact the client and send the eSIM data.`;
+                        const alertText = mLang === 'ru' 
+                            ? `🌐 **Новый заказ с сайта!**\nКонтакт: \`${contact}\`\n\nТариф: ${mlt.country} | ${mlt.data_gb} на ${mlt.validity}\nК оплате: **₽${price || tariff?.price_rub || '?'}**\n\n⚠️ ВАЖНО: Проверьте поступление оплаты, затем свяжитесь с клиентом по указанному контакту и отправьте QR/данные eSIM.`
+                            : `🌐 **New order from Website!**\nContact: \`${contact}\`\n\nPlan: ${mlt.country} | ${mlt.data_gb} for ${mlt.validity}\nPrice: **₽${price || tariff?.price_rub || '?'}**\n\n⚠️ IMPORTANT: Verify payment, then contact the client and send the eSIM data.`;
 
-                            await bot.telegram.sendMessage(manager.telegram_id, alertText, { parse_mode: 'Markdown' });
-                        } catch (e) {
-                            console.error('Failed to notify manager via Realtime:', e);
-                        }
+                        await bot.telegram.sendMessage(manager.telegram_id, alertText, { parse_mode: 'Markdown' });
+                    } catch (e) {
+                        console.error('Failed to notify manager via Realtime:', e);
                     }
                 }
-            } catch (err) {
-                console.error('Error processing realtime web order:', err);
             }
+        } catch (err) {
+            console.error('Error processing realtime web order:', err);
         }
     })
     .subscribe();
