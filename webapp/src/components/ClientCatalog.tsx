@@ -164,13 +164,17 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                         <div className="text-3xl font-extrabold text-white">₽{paymentQrModal.price_rub}</div>
                     </div>
 
-                    <div className="bg-white p-2 rounded-2xl w-fit mx-auto shadow-[0_10px_50px_rgba(255,255,255,0.1)] mb-6 overflow-hidden">
+                    <div className="bg-white p-2 rounded-2xl w-fit mx-auto shadow-[0_10px_50px_rgba(255,255,255,0.1)] mb-4 overflow-hidden">
                         <img
                             src={paymentQrModal.payment_qr_url}
                             alt="Payment QR"
                             className="w-64 h-64 object-contain block"
                         />
                     </div>
+
+                    <p className="text-[12px] text-on-surface-variant mb-6 leading-relaxed bg-primary/5 p-3 rounded-xl border border-primary/10">
+                        Если возникли проблемы, напишите боту <a href="https://t.me/emedeoworld_bot" target="_blank" className="text-primary font-bold">@emedeoworld_bot</a>. Через него также можно оформить заказ.
+                    </p>
 
                     <div className="space-y-3 w-full">
                         <button 
@@ -189,10 +193,6 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                             Закрыть
                         </button>
                     </div>
-
-                    <p className="text-[10px] text-on-surface-variant mt-4 leading-relaxed">
-                        Если возникли проблемы, напишите боту <a href="https://t.me/emedeoworld_bot" target="_blank" className="text-primary font-bold">@emedeoworld_bot</a>. Через него также можно оформить заказ.
-                    </p>
                 </div>
             </div>
         );
