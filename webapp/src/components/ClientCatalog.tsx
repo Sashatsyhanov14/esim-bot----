@@ -119,6 +119,9 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                             onChange={(e) => setContactInfo(e.target.value)}
                             className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded-xl px-4 py-3 text-sm text-on-surface focus:outline-none focus:border-primary/50 transition-colors"
                         />
+                        <p className="text-[10px] text-primary/70 mt-2 leading-relaxed">
+                            ⚠️ Пожалуйста, <b>проверьте данные</b>. Если вы введете контакт с ошибкой, мы не сможем связаться с вами для передачи eSIM.
+                        </p>
                     </div>
 
                     <div className="flex gap-3 pt-2">
