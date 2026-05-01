@@ -315,7 +315,7 @@ const App: React.FC = () => {
   const copyToClipboard = (text: string) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
-        if (tg) tg.showAlert(t.linkCopied);
+        if (tg && tg.platform !== 'unknown' && tg.showAlert) tg.showAlert(t.linkCopied);
         else alert(t.linkCopied);
       }).catch(() => {
         fallbackCopy(text);
@@ -332,7 +332,7 @@ const App: React.FC = () => {
     textArea.select();
     try {
       document.execCommand('copy');
-      if (tg) tg.showAlert(t.linkCopied);
+      if (tg && tg.platform !== 'unknown' && tg.showAlert) tg.showAlert(t.linkCopied);
       else alert(t.linkCopied);
     } catch (err) {
       console.error('Fallback copy failed', err);
@@ -416,15 +416,15 @@ const App: React.FC = () => {
   const handleSendQr = async () => {
     if (!user?.telegram_id) return;
     try {
-      if (tg) tg.showAlert("Отправляем QR в чат...");
+      if (tg && tg.platform !== 'unknown' && tg.showAlert) tg.showAlert("Отправляем QR в чат...");
       await fetch('/api/send-qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ telegram_id: user.telegram_id })
       });
-      if (tg) tg.close();
+      if (tg && tg.platform !== 'unknown' && tg.close) tg.close();
     } catch (err) {
-      if (tg) tg.showAlert("Ошибка отправки QR");
+      if (tg && tg.platform !== 'unknown' && tg.showAlert) tg.showAlert("Ошибка отправки QR");
       else alert("Ошибка отправки QR");
     }
   };

@@ -48,24 +48,28 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
             if (telegramId) {
                 // User is in Telegram
                 try {
-                    await fetch('/api/catalog-buy', {
+                    const res = await fetch('/api/catalog-buy', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ telegramId, tariffId: tData.id })
                     });
+                    if (!res.ok) throw new Error('API buy failed');
                 } catch (apiErr) {
                     console.error('API Buy Error:', apiErr);
+                    throw apiErr;
                 }
             } else if (contact) {
                 // Web user with contact info
                 try {
-                    await fetch('/api/web-order', {
+                    const res = await fetch('/api/web-order', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ contact, tariffId: tData.id })
                     });
+                    if (!res.ok) throw new Error('API web-order failed');
                 } catch (apiErr) {
                     console.error('API Web Order Error:', apiErr);
+                    throw apiErr;
                 }
             }
 
@@ -76,7 +80,9 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
 
             const successMsg = `✅ Заказ на ${tData.country} (${tData.data_gb}) принят!\n\nСейчас вы будете перенаправлены на оплату.`;
 
-            if (tg) {
+            const isTgApp = tg && tg.platform !== 'unknown' && tg.initData;
+
+            if (isTgApp) {
                 tg.showAlert(successMsg + ' После оплаты мы вышлем вам данные eSIM в Telegram.');
                 if (tData.payment_link) {
                     tg.openLink(tData.payment_link);
@@ -98,7 +104,8 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
             console.error(e);
             alert('Произошла ошибка при оформлении заказа. Мы перенаправим вас в бот для ручного оформления.');
             const botUsername = import.meta.env.VITE_BOT_USERNAME || 'emedeoesimworld_bot';
-            if (tg) tg.openTelegramLink(`https://t.me/${botUsername}`);
+            const isTgApp = tg && tg.platform !== 'unknown' && tg.initData;
+            if (isTgApp) tg.openTelegramLink(`https://t.me/${botUsername}`);
             else window.open(`https://t.me/${botUsername}`, '_blank');
         }
     };

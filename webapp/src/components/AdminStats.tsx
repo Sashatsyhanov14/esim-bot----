@@ -166,19 +166,19 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
             const result = await response.json();
 
             if (response.ok && result.success) {
-                tg?.showAlert(t.successTitle || "Успешно!");
+                tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert(t.successTitle || "Успешно!") : alert(t.successTitle || "Успешно!");
                 fetchManagers();
                 setNewManagerId('');
             } else {
                 if (response.status === 404) {
-                    tg?.showAlert(t.managerAddError || 'Пользователь не найден.');
+                    tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert(t.managerAddError || 'Пользователь не найден.') : alert(t.managerAddError || 'Пользователь не найден.');
                 } else {
-                    tg?.showAlert(result.error || 'Ошибка при добавлении.');
+                    tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert(result.error || 'Ошибка при добавлении.') : alert(result.error || 'Ошибка при добавлении.');
                 }
             }
         } catch (err: any) {
             console.error('Add Manager Error:', err);
-            tg?.showAlert('Ошибка сети: ' + err.message);
+            tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert('Ошибка сети: ' + err.message) : alert('Ошибка сети: ' + err.message);
         }
     };
 
@@ -187,7 +187,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
         const { error } = await supabase.from('users').update({ role: 'client' }).eq('telegram_id', tgId);
         if (!error) {
             fetchManagers();
-            tg?.showAlert(t.managerRemoveSuccess?.replace('{id}', String(tgId)) || `Удален`);
+            tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert(t.managerRemoveSuccess?.replace('{id}', String(tgId)) || `Удален`) : alert(t.managerRemoveSuccess?.replace('{id}', String(tgId)) || `Удален`);
         }
     };
 
@@ -195,7 +195,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
         const { error } = await supabase.from('users').update({ role: newRole }).eq('telegram_id', tgId);
         if (!error) {
             fetchManagers();
-            tg?.showAlert("✅ Роль обновлена");
+            tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert("✅ Роль обновлена") : alert("✅ Роль обновлена");
         }
     };
 
@@ -231,7 +231,7 @@ export default function AdminStats({ t, globalStats }: { t: any, globalStats: an
             setUsersInfo(prev => prev.map(u => u.telegram_id === tgId ? { ...u, custom_note: noteValue } : u));
             fetchManagers();
             setEditingNoteId(null);
-            tg?.showAlert ? tg.showAlert(t.promoSuccess || "Заметка сохранена!") : alert(t.promoSuccess || "Saved!");
+            tg?.showAlert && tg.platform !== 'unknown' ? tg.showAlert(t.promoSuccess || "Заметка сохранена!") : alert(t.promoSuccess || "Saved!");
         }
     };
 
