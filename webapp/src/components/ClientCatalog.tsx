@@ -216,6 +216,19 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
 
         setSubmitLoading(true);
         await processPurchase(checkoutModal, contactInfo);
+        
+        // Track event in Google Analytics
+        if (typeof (window as any).gtag === 'function') {
+            (window as any).gtag('event', 'begin_checkout', {
+                'items': [{
+                    'item_id': checkoutModal.id,
+                    'item_name': checkoutModal.country,
+                    'price': checkoutModal.price_rub,
+                    'currency': 'RUB'
+                }]
+            });
+        }
+
         setSubmitLoading(false);
         setCheckoutModal(null);
     };
