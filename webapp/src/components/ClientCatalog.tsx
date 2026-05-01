@@ -164,11 +164,11 @@ export default function ClientCatalog({ telegramId }: { telegramId?: string | nu
                         <div className="text-3xl font-extrabold text-white">₽{paymentQrModal.price_rub}</div>
                     </div>
 
-                    <div className="bg-white p-4 rounded-3xl w-fit mx-auto shadow-[0_10px_40px_rgba(0,0,0,0.3)] mb-6">
+                    <div className="bg-white p-2 rounded-2xl w-fit mx-auto shadow-[0_10px_50px_rgba(255,255,255,0.1)] mb-6 overflow-hidden">
                         <img
                             src={paymentQrModal.payment_qr_url}
                             alt="Payment QR"
-                            className="w-48 h-48 object-contain rounded-2xl block"
+                            className="w-64 h-64 object-contain block"
                         />
                     </div>
 
